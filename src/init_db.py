@@ -13,13 +13,20 @@ SCHEMA_PATH = REPO_ROOT / "sql" / "schema.sql"
 DB_PATH = REPO_ROOT / "warehouse" / "warehouse.duckdb"
 
 
+def ensure_schema(con: duckdb.DuckDBPyConnection) -> None:
+    """Apply sql/schema.sql against an already-open connection. Every
+    statement in that file is IF NOT EXISTS, so this is safe to call on
+    every run — load.py relies on this to guarantee the tables exist
+    without requiring init_db.py to have been run first."""
+    con.execute(SCHEMA_PATH.read_text(encoding="utf-8"))
+
+
 def main() -> None:
-    schema_sql = SCHEMA_PATH.read_text(encoding="utf-8")
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     con = duckdb.connect(str(DB_PATH))
     try:
-        con.execute(schema_sql)
+        ensure_schema(con)
         tables = con.execute("SHOW TABLES").fetchall()
     finally:
         con.close()

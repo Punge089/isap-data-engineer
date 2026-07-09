@@ -50,8 +50,8 @@ def seed_cgd(con):
     )
     con.execute(
         """
-        INSERT INTO dim_source (agency, file_name, ingested_at)
-        VALUES ('CGD', '2026_07_03.xlsx', now())
+        INSERT INTO dim_source (agency, file_name, file_hash, ingested_at)
+        VALUES ('CGD', '2026_07_03.xlsx', 'testhash-cgd', now())
         """
     )
     date_key = con.execute("SELECT date_key FROM dim_date").fetchone()[0]
@@ -76,8 +76,8 @@ def seed_ocsc(con):
     )
     con.execute(
         """
-        INSERT INTO dim_source (agency, file_name, ingested_at)
-        VALUES ('OCSC', 'thaigovmanpower2567_4.xlsx', now())
+        INSERT INTO dim_source (agency, file_name, file_hash, ingested_at)
+        VALUES ('OCSC', 'thaigovmanpower2567_4.xlsx', 'testhash-ocsc', now())
         """
     )
     con.execute(

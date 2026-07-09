@@ -68,12 +68,18 @@ CREATE TABLE IF NOT EXISTS dim_personnel_category (
     category_name           VARCHAR NOT NULL UNIQUE  -- stripped of whitespace, e.g. 'ข้าราชการ'
 );
 
+-- file_hash is the natural key: same file content -> same hash -> the
+-- loader's ON CONFLICT (file_hash) DO NOTHING treats re-running against an
+-- unchanged file as a no-op, while a genuinely new report (different
+-- content, different hash) correctly gets its own lineage row. Without a
+-- UNIQUE constraint here, ON CONFLICT has nothing to target and every
+-- loader run would insert a duplicate dim_source row.
 CREATE TABLE IF NOT EXISTS dim_source (
     source_id   INTEGER PRIMARY KEY DEFAULT nextval('seq_dim_source'),
     agency      VARCHAR NOT NULL,   -- 'CGD' or 'OCSC'
     source_url  VARCHAR,
     file_name   VARCHAR NOT NULL,   -- e.g. '2026_07_03.xlsx'
-    file_hash   VARCHAR,            -- sha256 of the raw file, ties to raw/manifest.json
+    file_hash   VARCHAR NOT NULL UNIQUE,  -- sha256 of the raw file, ties to raw/manifest.json
     ingested_at TIMESTAMP NOT NULL
 );
 
