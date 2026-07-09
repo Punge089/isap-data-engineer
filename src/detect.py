@@ -8,14 +8,25 @@ same way extraction and cleaning were.
 
 Known, permanent limitations found while building this (not TODOs):
 
-- OCSC's listing page is behind a Cloudflare managed JS challenge ("Just a
-  moment...", HTTP 403) that plain requests/BeautifulSoup cannot pass —
-  there is no header or cookie that defeats this without executing
-  JavaScript, which is out of scope for this project (PROJECT_SPEC.md §11
-  anticipated exactly this risk). A saved copy of that exact challenge page
-  is in tests/fixtures/ocsc_cloudflare_challenge.html. Since OCSC only
-  publishes once a year, the honest fallback is a manual check, not an
-  automated one — see check_ocsc()'s returned message.
+- OCSC's listing page has given TWO DIFFERENT real responses on two
+  separate live requests to the exact same URL, and this is not treated as
+  one superseding the other — see HANDOFF.md's "Open risk: OCSC detection
+  may be non-deterministic" for the full record. Both are handled:
+  (1) sometimes a Cloudflare managed JS challenge ("Just a moment...",
+  HTTP 403) — see tests/fixtures/ocsc_cloudflare_challenge.html for a real
+  saved copy; (2) sometimes a clean 200 with the real WordPress/Elementor
+  page — see tests/fixtures/ocsc_real_page_no_file_links.html — but even
+  then the report list isn't in that HTML. It's a "custom-field-filter-form"
+  widget backed by a WordPress admin-ajax.php call that only populates
+  results after JavaScript runs (confirmed: zero .xlsx/.xls/.pdf/.zip links
+  anywhere in that real, successfully-fetched 369KB page). So neither
+  outcome is scrapable with requests/BeautifulSoup: one is blocked before
+  reaching the content, the other reaches content that still requires
+  JavaScript to populate, which is out of scope for this project
+  (PROJECT_SPEC.md §11 anticipated the general risk; these are the two
+  confirmed concrete shapes it took). Since OCSC only publishes once a
+  year, the honest fallback is a manual check either way — see
+  check_ocsc()'s returned messages for both cases.
 
 - CGD's listing page DOES work with plain requests + BeautifulSoup. Each
   report row has a dedicated 'วัน/เดือน/ปี' column in 'DD/MM/YYYY' format
@@ -98,12 +109,25 @@ def find_latest_cgd_report(html: str) -> tuple[str, date] | None:
 
 # ---------------------------------------------------------------- manifest
 
+def latest_cgd_date_from_manifest(manifest: dict) -> date | None:
+    """The most recent report_date across ALL manifest entries for CGD.
+
+    Manifest order is not trusted here for the same reason
+    find_latest_cgd_report doesn't trust page order: once Step 7 can append
+    a second CGD entry (e.g. next month's report), the newest one is not
+    guaranteed to be last (or first) in the file.
+    """
+    known_dates = [
+        date.fromisoformat(entry["report_date"])
+        for entry in manifest["files"]
+        if entry["source"] == "CGD"
+    ]
+    return max(known_dates) if known_dates else None
+
+
 def load_known_cgd_date() -> date | None:
     manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
-    for entry in manifest["files"]:
-        if entry["source"] == "CGD":
-            return date.fromisoformat(entry["report_date"])
-    return None
+    return latest_cgd_date_from_manifest(manifest)
 
 
 # ---------------------------------------------------------------- reporting
@@ -139,25 +163,53 @@ def check_cgd() -> str:
     return format_cgd_result(find_latest_cgd_report(html), known_date)
 
 
+FILE_LINK_EXTENSIONS = (".xlsx", ".xls", ".pdf", ".zip", ".doc", ".docx")
+
+
+def html_has_file_links(html: str) -> bool:
+    """True if the HTML contains any direct link to a document file.
+
+    Used to confirm, on every run, whether OCSC's page happens to expose
+    its report list statically, or is still hiding it behind the
+    JS-driven filter widget described in this module's docstring — rather
+    than assuming today's finding holds forever.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    return any(
+        any(ext in a["href"].lower() for ext in FILE_LINK_EXTENSIONS)
+        for a in soup.find_all("a", href=True)
+    )
+
+
 def check_ocsc() -> str:
     try:
-        fetch_html(OCSC_URL)
+        html = fetch_html(OCSC_URL)
     except requests.exceptions.RequestException as e:
         return (
-            f"OCSC: could not fetch listing page automatically ({type(e).__name__}: {e}). "
-            "Known cause as of this writing: this URL returns a Cloudflare managed JS "
-            "challenge ('Just a moment...', HTTP 403) that requests/BeautifulSoup cannot "
-            "pass — see tests/fixtures/ocsc_cloudflare_challenge.html for a saved copy of "
-            "that exact page. (If the error above is SSL-related instead, that's a local "
-            "network/proxy certificate issue, not this site.) OCSC publishes once a year, "
-            f"so check manually at {OCSC_URL}"
+            f"OCSC: could not fetch listing page ({type(e).__name__}: {e}). Observed "
+            "intermittently while building this: this URL is sometimes served behind a "
+            "Cloudflare managed JS challenge ('Just a moment...', HTTP 403) — see "
+            "tests/fixtures/ocsc_cloudflare_challenge.html for a saved copy. OCSC publishes "
+            f"once a year, so check manually at {OCSC_URL}"
         )
-    # If this ever succeeds, no parser has been built or tested for OCSC's
-    # real listing markup — we have never seen it. Deliberately conservative
-    # rather than guessing at a structure.
+
+    if not html_has_file_links(html):
+        return (
+            "OCSC: fetched the real page successfully, but it contains no direct file "
+            "links at all — the report list is rendered by a JS-driven filter widget "
+            "(WordPress admin-ajax.php), not present in the static HTML. Confirmed true "
+            "even on a clean 200 response (see tests/fixtures/ocsc_real_page_no_file_links.html) "
+            "— not scrapable with requests/BeautifulSoup regardless of whether Cloudflare "
+            f"challenges this particular request. Check manually at {OCSC_URL}"
+        )
+
+    # If this ever triggers, the page's structure changed to expose file
+    # links statically for the first time -- worth investigating for real,
+    # not something this function has a parser for yet.
     return (
-        "OCSC: fetched successfully, but no parser exists for this page's structure "
-        f"(never seen past the Cloudflare challenge before) — check manually at {OCSC_URL}"
+        "OCSC: fetched successfully and found file links directly in the static HTML — "
+        "this is new (previously the list was JS-rendered only, see module docstring). "
+        f"No parser exists yet to pick the latest one — check manually at {OCSC_URL}"
     )
 
 

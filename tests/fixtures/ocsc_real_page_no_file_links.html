@@ -1,0 +1,256 @@
+<html><body><div class="elementor-element elementor-element-7582c02 elementor-widget elementor-widget-theme-post-content" data-e-type="widget" data-element_type="widget" data-id="7582c02" data-widget_type="theme-post-content.default">
+<div class="elementor-widget-container">
+<div class="elementor elementor-29419" data-elementor-id="29419" data-elementor-post-type="page" data-elementor-type="wp-page">
+<div class="elementor-element elementor-element-33a60b6 e-flex e-con-boxed e-con e-parent" data-e-type="container" data-element_type="container" data-id="33a60b6">
+<div class="e-con-inner">
+<div class="elementor-element elementor-element-1c5a3f2 icon-yellow elementor-widget elementor-widget-heading" data-e-type="widget" data-element_type="widget" data-id="1c5a3f2" data-widget_type="heading.default">
+<div class="elementor-widget-container">
+<h1 class="elementor-heading-title elementor-size-default">รายงานสถิติกำลังคนภาครัฐ ปี 2564-ปัจจุบัน</h1> </div>
+</div>
+<div class="elementor-element elementor-element-163eb23 elementor-widget elementor-widget-search_and_order" data-e-type="widget" data-element_type="widget" data-id="163eb23" data-widget_type="search_and_order.default">
+<div class="elementor-widget-container">
+<div class="search-and-order">
+<div id="search-header">
+<form id="search-and-order-form-6a4fbc71651ef">
+<div class="search-container">
+<input id="search-form-input-6a4fbc71651f1" placeholder="ค้นหา..." type="text"/>
+<button aria-label="search" class="search-submit-button" type="submit"><i aria-hidden="true" class="fas fa-search"></i></button>
+</div>
+<div class="hidden-target-id">
+<input id="hidden-sort-selection-6a4fbc71651f2" name="hidden-sort-selection" type="hidden" value="date"/>
+<input id="target-id-6a4fbc71651f4" name="target_id[]" type="hidden" value="[792]"/>
+<input id="pos-type-6a4fbc71651f5" type="hidden" value="reports"/>
+<input id="result-per-page-6a4fbc71651f6" type="hidden" value="10"/>
+</div>
+</form>
+</div>
+<div class="result-control-wrapper">
+<div class="result-control">
+<p class="search-results-count"></p>
+<div class="select-container">
+<p class="sorting-label">จัดเรียงตาม</p>
+<select class="single-select-dropdown" id="sort-selection-6a4fbc71651f3" style="width: 200px;">
+<option selected="" value="date">เผยแพร่ล่าสุด</option><option value="title">ตัวอักษร (ก-ฮ, A-Z)</option><option value="post_views">จำนวนผู้เข้าชม</option> </select>
+<div alt="filter accordion" class="sao-accordion" role="button"><i class="fas fa-sliders-h fa-xs" style="color: var(--primary-blue-500);"></i></div>
+</div>
+</div>
+<div class="form-container sao-filter-panel" id="sao-filter-panel">
+<form class="custom-field-filter-form" id="custom-field-filter-form" method="get">
+<div class="filter-grid-container">
+<div class="filter-grid-item"><label class="body1 multiple-select-label" for="publish-year">ปีที่เผยแพร่</label><select class="multiple-select-dropdown" multiple="multiple" name="publish-year[]" style="width: 100%;"><option value="2552">2552</option><option value="2553">2553</option><option value="2554">2554</option><option value="2555">2555</option><option value="2556">2556</option><option value="2557">2557</option><option value="2558">2558</option><option value="2559">2559</option><option value="2560">2560</option><option value="2561">2561</option><option value="2562">2562</option><option value="2563">2563</option><option value="2564">2564</option><option value="2565">2565</option><option value="2566">2566</option><option value="2567">2567</option><option value="2568">2568</option><option value="2569">2569</option><option value="2570">2570</option><option value="2571">2571</option><option value="2572">2572</option><option value="2573">2573</option><option value="2574">2574</option><option value="2575">2575</option><option value="2576">2576</option><option value="2577">2577</option><option value="2578">2578</option><option value="2579">2579</option><option value="2580">2580</option><option value="2581">2581</option><option value="2582">2582</option><option value="2583">2583</option><option value="2584">2584</option><option value="2585">2585</option><option value="2586">2586</option><option value="2587">2587</option></select></div> <div class="form-button-container" style="grid-column: span 2;">
+<button class="reset-button" id="reset-button">ล้างค่า</button>
+<button class="filter-button" type="submit">ใช้ตัวกรอง</button>
+</div>
+</div>
+</form>
+</div>
+</div>
+</div>
+<div id="loading-indicator-container-6a4fbc71651f7" style="display: flex;justify-content: center;align-items: center;width: 100%;padding: 48px 0;">
+<span class="loader"></span>
+</div>
+<div class="search-results"></div>
+<script type="text/javascript">
+            /** This function combines search and order and custom field filter
+             * 1. Get data from search form elements
+             * 2. Get data from custom field filter form
+             * 3. Combine data from both forms
+             * 4. Send data to server
+             * 5. Render results
+             */
+            jQuery(document).ready(function($) {
+                let currentPage = 1;
+
+                function getFilterFormData() {
+                    const formDataArray = $('#custom-field-filter-form').serializeArray();
+                    /** @type Record<string, string> Grouped Data from filter form */
+                    const groupedData = {};
+
+                    const $searchInput = $('#search-form-input-6a4fbc71651f1');
+
+                    // Group data by name and join multiple values with a comma
+                    formDataArray.forEach(function(item) {
+                        const mappedItem = item.name.replace('[]', '');
+                        if (groupedData[mappedItem]) {
+                            groupedData[mappedItem] += ',' + item.value;
+                        } else {
+                            groupedData[mappedItem] = item.value;
+                        }
+                    });
+
+                    // Get search data from search form
+                    const searchQuery = $searchInput.val();
+
+                    // Serialize the grouped data
+                    if (searchQuery) {
+                        delete groupedData['s'];
+                        groupedData['s'] = searchQuery;
+                    }
+
+                    const encodedFormData = $.param(groupedData);
+
+                    if (encodedFormData === '') {
+                        return {};
+                    }
+
+                    delete groupedData['s'];
+
+                    return groupedData;
+                }
+
+                // Search input field
+                const $searchInput = $('#search-form-input-6a4fbc71651f1');
+                const $targetId = $('#target-id-6a4fbc71651f4');
+                const $postType = $('#pos-type-6a4fbc71651f5');
+                const $resultPerPage = $('#result-per-page-6a4fbc71651f6');
+
+                /**
+                 * Trigger when reset button is clicked
+                 */
+                $('#reset-button').on('click', function() {
+                    // Trigger form reset
+                    $('#custom-field-filter-form').trigger('reset');
+
+                    // Trigger select2 reset
+                    $('.multiple-select-dropdown').val(null).trigger('change');
+                });
+
+                $('#custom-field-filter-form').submit(function(e) {
+                    e.preventDefault();
+
+                    $('#search-and-order-form-6a4fbc71651ef')[0].reset();
+                    currentPage = 1;
+                    performSearch();
+                    return false;
+                });
+
+                /**
+                 * Trigger when search form is submitted
+                 */
+                $('#search-and-order-form-6a4fbc71651ef').on('submit', function(e) {
+                    e.preventDefault();
+                    currentPage = 1; // Reset current page to 1 when a new search is performed
+                    performSearch();
+                    return false;
+                });
+
+                /**
+                 * Trigger when dropdown is changed
+                 */
+                $('#sort-selection-6a4fbc71651f3').on('change', function(e) {
+                    e.preventDefault();
+                    currentPage = 1; // Reset current page to 1 when the order changes
+                    performSearch();
+                });
+
+                /**
+                 * Trigger when pagination is clicked
+                 */
+                $(document).on('click', '.pagination a', function(e) {
+                    e.preventDefault();
+                    const isNext = $(this).hasClass('next');
+                    const isPrev = $(this).hasClass('prev');
+                    if (isNext) {
+                        // If next button is clicked, increment the current page
+                        currentPage += 1;
+                    } else if (isPrev) {
+                        // If prev button is clicked, decrement the current page
+                        currentPage -= 1;
+                    } else {
+                        currentPage = $(this).text();
+                        currentPage = parseInt(currentPage);
+                    }
+
+                    performSearch(); // Perform the search with the updated page
+                });
+
+                /**
+                 * Perform the search
+                 */
+                function performSearch() {
+
+                    const searchQuery = $searchInput.val();
+                    const targetIds = JSON.parse($targetId.val() || "[]");
+                    const postType = $postType.val();
+                    const resultPerPage = $resultPerPage.val();
+                    const hiddenOrderByValue = $('#hidden-sort-selection-6a4fbc71651f2').val();
+                    // the value of orderBy must be access here to get the latest value
+                    const orderBy = $('#sort-selection-6a4fbc71651f3').val() || hiddenOrderByValue;
+
+                    $('.sao-accordion').removeClass('sao-active')
+                    $('.search-results').html('');
+                    $('.result-control-wrapper').hide();
+                    $('#loading-indicator-container-6a4fbc71651f7').show();
+                    /**
+                     * @type Record<string, string>
+                     * Search form data
+                     */
+                    const searchFormData = {
+                        page: currentPage,
+                        result_per_page: resultPerPage,
+                        term_ids: targetIds,
+                        post_type: postType,
+                        order_by: orderBy,
+                        search_query: searchQuery,
+                    };
+
+                    const filterFormData = getFilterFormData();
+                    $.ajax({
+                        url: 'https://www.ocsc.go.th/wp-admin/admin-ajax.php',
+                        type: 'POST',
+                        data: {
+                            action: 'search_filter_order', // Custom AJAX action
+                            nonce: '1a3d14ac26',
+                            search_form_data: searchFormData,
+                            filter_form_data: filterFormData,
+                        },
+                        success: function(response) {
+                            // Update the result container with the fetched HTML
+                            $('#loading-indicator-container-6a4fbc71651f7').hide();
+
+                            $('#sao-filter-panel').show();
+                            $('.result-control-wrapper').show();
+                            $('.search-results').html(response).trigger('contentUpdated');
+
+                            // scroll to top
+                            $('html, body').animate({
+                                scrollTop: 0
+                            }, 'fast');
+                        },
+                        error: function(error) {
+                            $('#sao-filter-panel').show();
+                            $('.result-control-wrapper').show();
+                            $('#loading-indicator-container-6a4fbc71651f7').hide();
+                            console.error(error);
+                        },
+                    });
+                }
+
+                $(document).on('contentUpdated', function() {
+                    $('.single-select-dropdown').select2({});
+                    $('b[role=presentation]').hide();
+                    $('.select2-selection__arrow').append(
+                        "<i class='fas fa-chevron-down'></i>"
+                    );
+                });
+                                    $('.sao-accordion').show();
+                
+                performSearch();
+            });
+        </script>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div><div class="form-container sao-filter-panel" id="sao-filter-panel">
+<form class="custom-field-filter-form" id="custom-field-filter-form" method="get">
+<div class="filter-grid-container">
+<div class="filter-grid-item"><label class="body1 multiple-select-label" for="publish-year">ปีที่เผยแพร่</label><select class="multiple-select-dropdown" multiple="multiple" name="publish-year[]" style="width: 100%;"><option value="2552">2552</option><option value="2553">2553</option><option value="2554">2554</option><option value="2555">2555</option><option value="2556">2556</option><option value="2557">2557</option><option value="2558">2558</option><option value="2559">2559</option><option value="2560">2560</option><option value="2561">2561</option><option value="2562">2562</option><option value="2563">2563</option><option value="2564">2564</option><option value="2565">2565</option><option value="2566">2566</option><option value="2567">2567</option><option value="2568">2568</option><option value="2569">2569</option><option value="2570">2570</option><option value="2571">2571</option><option value="2572">2572</option><option value="2573">2573</option><option value="2574">2574</option><option value="2575">2575</option><option value="2576">2576</option><option value="2577">2577</option><option value="2578">2578</option><option value="2579">2579</option><option value="2580">2580</option><option value="2581">2581</option><option value="2582">2582</option><option value="2583">2583</option><option value="2584">2584</option><option value="2585">2585</option><option value="2586">2586</option><option value="2587">2587</option></select></div> <div class="form-button-container" style="grid-column: span 2;">
+<button class="reset-button" id="reset-button">ล้างค่า</button>
+<button class="filter-button" type="submit">ใช้ตัวกรอง</button>
+</div>
+</div>
+</form>
+</div></body></html>

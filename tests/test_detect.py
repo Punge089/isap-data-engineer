@@ -21,12 +21,23 @@ report-listing table) of the real page fetched while building this step —
 CGD's site returned a normal 200 with real content, no bot protection
 encountered.
 
-tests/fixtures/ocsc_cloudflare_challenge.html is the *entire* real response
-OCSC's site returned (HTTP 403, Cloudflare's "Just a moment..." managed JS
-challenge) — there is no real listing-page fixture for OCSC because
-requests/BeautifulSoup were never able to get past this challenge to see
-one. That's the finding this step produced for OCSC, not a gap to silently
-fill in later.
+OCSC's live URL gave TWO DIFFERENT real responses on two separate live
+requests made while building this step. Neither fixture below supersedes
+or invalidates the other — both are genuine observations, and
+HANDOFF.md's "Open risk: OCSC detection may be non-deterministic" records
+this explicitly so Step 7 doesn't assume either one is the permanent
+behavior:
+  - tests/fixtures/ocsc_cloudflare_challenge.html — the real response on a
+    request that WAS challenged (HTTP 403, "Just a moment...").
+  - tests/fixtures/ocsc_real_page_no_file_links.html — the real response on
+    a separate request that was NOT challenged (clean HTTP 200, genuine
+    WordPress/Elementor page), trimmed to the relevant containers. Even
+    here, there are zero .xlsx/.xls/.pdf/.zip links anywhere in the full
+    369KB page — the report list is rendered by a JS-driven filter widget
+    (form.custom-field-filter-form, backed by wp-admin/admin-ajax.php), not
+    present in the static HTML at all. So getting past Cloudflare on a
+    given request would not be enough on its own; this is why there is no
+    find_latest_ocsc_report function to test.
 """
 
 from datetime import date
@@ -38,6 +49,8 @@ from detect import (
     CGD_REPORT_TITLE_PREFIX,
     find_latest_cgd_report,
     format_cgd_result,
+    html_has_file_links,
+    latest_cgd_date_from_manifest,
     parse_thai_be_date,
 )
 
@@ -109,10 +122,56 @@ def test_format_cgd_result_none_latest_flags_structural_change():
 
 
 def test_ocsc_fixture_is_a_cloudflare_challenge_not_real_content():
-    """Documents the actual finding for OCSC: the saved response is
-    Cloudflare's bot-challenge interstitial, not the listing page itself.
-    This is why there is no find_latest_ocsc_report function to test --
-    there has never been real content to build one against."""
+    """One of two DIFFERENT real responses observed from OCSC's live URL on
+    two separate requests (see HANDOFF.md's "Open risk: OCSC detection may
+    be non-deterministic"). This one: Cloudflare's bot-challenge
+    interstitial, not the listing page itself. Neither this nor the next
+    test's fixture supersedes the other — both are genuine, and Step 7 must
+    handle both, not assume either is the permanent behavior."""
     html = (FIXTURES_DIR / "ocsc_cloudflare_challenge.html").read_text(encoding="utf-8")
     assert "Just a moment" in html
-    assert "challenges.cloudflare.com" in html
+    assert not html_has_file_links(html)
+
+
+def test_ocsc_real_successful_page_still_has_no_file_links():
+    """The other of the two real responses observed from OCSC's live URL
+    (see previous test's docstring): a clean, non-challenged 200 response
+    that STILL contains zero direct file links anywhere. The report list
+    is rendered by a JS-driven filter widget, not present in static HTML —
+    this is why there is no find_latest_ocsc_report function to test,
+    regardless of which of the two observed responses a given request
+    gets."""
+    html = (FIXTURES_DIR / "ocsc_real_page_no_file_links.html").read_text(encoding="utf-8")
+    assert "Just a moment" not in html  # confirms this fixture is NOT a challenge page
+    assert not html_has_file_links(html)
+
+
+def test_latest_cgd_date_from_manifest_order_independent_ascending():
+    """Manifest lists the older entry first, newer entry second."""
+    manifest = {
+        "files": [
+            {"source": "CGD", "report_date": "2026-06-05"},
+            {"source": "CGD", "report_date": "2026-07-03"},
+            {"source": "OCSC", "fiscal_year_be": 2567},
+        ]
+    }
+    assert latest_cgd_date_from_manifest(manifest) == date(2026, 7, 3)
+
+
+def test_latest_cgd_date_from_manifest_order_independent_descending():
+    """Same two entries, reverse order — must give the same answer as the
+    ascending case above, proving the function doesn't trust manifest
+    order any more than find_latest_cgd_report trusts page order."""
+    manifest = {
+        "files": [
+            {"source": "CGD", "report_date": "2026-07-03"},
+            {"source": "CGD", "report_date": "2026-06-05"},
+            {"source": "OCSC", "fiscal_year_be": 2567},
+        ]
+    }
+    assert latest_cgd_date_from_manifest(manifest) == date(2026, 7, 3)
+
+
+def test_latest_cgd_date_from_manifest_no_cgd_entries_returns_none():
+    manifest = {"files": [{"source": "OCSC", "fiscal_year_be": 2567}]}
+    assert latest_cgd_date_from_manifest(manifest) is None
