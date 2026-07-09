@@ -9,6 +9,7 @@ verified in reports/eda_cgd.txt and reports/eda_ocsc.txt.
 import csv
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from extract import run_cgd, run_ocsc
@@ -53,3 +54,11 @@ def test_ocsc_every_row_has_hierarchy_level():
     levels = {r["hierarchy_level"] for r in rows}
     assert levels == {"0", "1", "2"}
     assert all(r["hierarchy_level"] != "" for r in rows)
+
+
+def test_ocsc_preserves_dirty_whitespace():
+    """Guard against someone later adding .strip() to extract.py —
+    that's Step 4's job, not extraction's."""
+    df = pd.read_csv(STAGING_DIR / "ocsc_workforce.csv")
+    dirty_name = df[df["category_name"].str.contains("องค์กรอิสระ", na=False)]["category_name"].iloc[0]
+    assert dirty_name != dirty_name.strip()

@@ -33,10 +33,10 @@ first.
 |---|---|---|
 | 0 — Repo skeleton & env | ✅ Done | See commit `Step 0: repo skeleton...` |
 | 1 — EDA & profiling | ✅ Done | See commit `Step 1: EDA & data profiling...`. Real findings in `reports/eda_cgd.txt` and `reports/eda_ocsc.txt` — **read these before re-profiling anything.** |
-| 2 — Warehouse DDL | ✅ Done | `sql/schema.sql` (DDL) + `src/init_db.py` (runner) + `tests/test_schema.py` (8 pytest cases, all green under duckdb 1.5.4 / pytest 8.4.2, run via `.venv`). `dim_date.date_natural_key` (UNIQUE) enforces one row per report_date/fiscal_year. `dim_date` also has a `CHECK (fiscal_year_ce = fiscal_year_be - 543)` guarding the BE/CE conversion. `dim_expense_type.is_leaf` guards against 'รวม' double-counting the other two expense types — same overcount pattern as the OCSC hierarchy, fixed the same way but on the dimension since CGD's 3-way split is static. Known gap carried forward: divide-by-zero in the `_pct` columns is **not yet handled** — see "Known edge cases for Step 4" below. |
-| 3 — Extractor | ✅ Done | `config/cgd.yaml` + `config/ocsc.yaml` (row/column boundaries) + `src/extract.py` + `tests/test_extract.py` (4 pytest cases, all green). Writes `staging/cgd_disbursement.csv` (24 rows) and `staging/ocsc_workforce.csv` (25 rows, hierarchy_level + parent_category tagged at extraction time). **Correction from the original Step 3 brief:** OCSC row count is 25, not 29 — verified directly against the raw file (1 grand total + 2 subtotals + 22 leaf = 25); the config's row *ranges* were already correct, only the total count claim was off. Added `PyYAML>=6.0,<7.0` to `requirements.txt` (was missing). No cleaning logic in this step — total row and footnote row are structurally excluded by range, not filtered by content; ministry names/category names are NOT `.strip()`-ed here (still dirty, e.g. `'องค์กรอิสระตามรัฐธรรมนูญ '`) — that's Step 4. |
-| 4 — Cleaner/transformer | ⬜ Not started | This is the next step. Must: `.strip()` text fields, recompute `disbursed_pct`/`share_pct` (deciding the divide-by-zero behavior — see edge case note below), compute `is_leaf`/`remaining`, and turn each CGD ministry row into 3 long-format rows (one per expense type) using `staging/cgd_disbursement.csv`'s `recurring_*`/`capital_*`/`total_*` columns. |
-| 5 — Loader | ⬜ Not started | |
+| 2 — Warehouse DDL | ✅ Done | `sql/schema.sql` (DDL) + `src/init_db.py` (runner) + `tests/test_schema.py` (8 pytest cases, all green under duckdb 1.5.4 / pytest 8.4.2, run via `.venv`). `dim_date.date_natural_key` (UNIQUE) enforces one row per report_date/fiscal_year. `dim_date` also has a `CHECK (fiscal_year_ce = fiscal_year_be - 543)` guarding the BE/CE conversion. `dim_expense_type.is_leaf` guards against 'รวม' double-counting the other two expense types — same overcount pattern as the OCSC hierarchy, fixed the same way but on the dimension since CGD's 3-way split is static. **Amended in Step 4:** `disbursed_pct`/`share_pct` were originally `NOT NULL`; loosened to nullable once Step 4 decided zero-denominator cases store NULL — see "Edge case history" below. |
+| 3 — Extractor | ✅ Done | `config/cgd.yaml` + `config/ocsc.yaml` (row/column boundaries) + `src/extract.py` + `tests/test_extract.py` (5 pytest cases, all green). Writes `staging/cgd_disbursement.csv` (24 rows) and `staging/ocsc_workforce.csv` (25 rows, hierarchy_level + parent_category tagged at extraction time). **Correction from the original Step 3 brief:** OCSC row count is 25, not 29 — verified directly against the raw file (1 grand total + 2 subtotals + 22 leaf = 25); the config's row *ranges* were already correct, only the total count claim was off. Added `PyYAML>=6.0,<7.0` to `requirements.txt` (was missing). No cleaning logic in this step — total row and footnote row are structurally excluded by range, not filtered by content; ministry names/category names are NOT `.strip()`-ed here (still dirty, e.g. `'องค์กรอิสระตามรัฐธรรมนูญ '`) — that was Step 4's job. |
+| 4 — Cleaner/transformer | ✅ Done | `src/clean.py` + `tests/test_clean.py` (6 pytest cases, all green). Reads Step 3's staging CSVs, writes `staging/cgd_disbursement_clean.csv` (72 rows — 24 ministries × 3 expense types, unpivoted) and `staging/ocsc_workforce_clean.csv` (25 rows). Recomputes `disbursed_pct`/`share_pct` from raw numbers (never trusts the Excel-reported percent — matches within float precision, verified). **Divide-by-zero decision (closes the Step 2 edge-case note): both return `None`/NULL when the denominator is 0**, not `inf` or a crash — not reachable in today's data (checked: no ministry has `budget_after_transfer == 0`; OCSC grand total is 3,004,485), covered by a synthetic-row unit test since real data can't exercise it. `is_leaf` computed both places: CGD from a fixed expense-type set (`รวม` = rollup = not leaf), OCSC from `hierarchy_level == 2`. `parent_category` is deliberately left as **plain stripped text, not a resolved key** — `dim_personnel_category` isn't populated until Step 5's loader runs, so resolving it here would mean guessing; this is a documented Step 5 dependency, not an oversight. |
+| 5 — Loader | ⬜ Not started | This is the next step. Must: insert `dim_expense_type` (3 rows, with `is_leaf`) and `dim_personnel_category` rows first, then resolve `staging/ocsc_workforce_clean.csv`'s text `parent_category` into `parent_category_key` via a lookup against the just-inserted dimension, then load both fact tables. Also must decide how CSV's empty-string representation of `disbursed_pct`/`share_pct` NULLs gets turned into a real SQL NULL on insert — csv module writes `None` as `''`, not the literal word NULL. |
 | 6 — Latest-file detector (web scraping) | ⬜ Not started | Untested — no internet access existed in the sandbox that built Steps 0-1. Test this early on the author's real machine. |
 | 7 — Scheduler + schema validation | ⬜ Not started | |
 | 8 — Tests | ⬜ Not started | |
@@ -70,18 +70,18 @@ first.
 5. **OCSC sheet `12`:** one category name has trailing whitespace
    (`'องค์กรอิสระตามรัฐธรรมนูญ '`) — must `.strip()` all text fields.
 
-## Known edge cases for Step 4 (cleaner/transformer) — not yet handled anywhere
+## Edge case history: divide-by-zero in the derived `_pct` columns — CLOSED in Step 4
 
-- **Divide-by-zero in the derived `_pct` columns.** `fact_disbursement.disbursed_pct`
-  (`disbursed / budget_after_transfer * 100`) and `fact_workforce_summary.share_pct`
-  (`headcount / grand_total_headcount * 100`) both divide by a value that is
-  *usually* non-zero in the data seen so far, but nothing in `sql/schema.sql`
-  guarantees it (both `_pct` columns are `NOT NULL`, not "not zero"). Neither
-  Step 1's EDA nor Step 2's DDL enforces or even checks this — it is the
-  cleaner's job in Step 4 to decide what happens when the denominator is 0
-  (e.g. a ministry with `budget_after_transfer = 0`): store `NULL`, store `0`,
-  or raise loud. Whatever is chosen, write a test for it — don't let it surface
-  first as a silent `inf`/`NaN` in the warehouse.
+`fact_disbursement.disbursed_pct` and `fact_workforce_summary.share_pct` both
+divide by a value that's *usually* non-zero (verified: not reachable in
+today's data), but Step 2's DDL originally declared both `NOT NULL`, which
+would have crashed the loader the day it happened. Step 4's `clean.py`
+decided: store `NULL` when the denominator is 0, not `inf`/`NaN`/a crash.
+That decision required going back and loosening `sql/schema.sql` — both
+columns are now nullable (`DOUBLE`, not `DOUBLE NOT NULL`) — re-verified
+`tests/test_schema.py` still passes and manually confirmed a NULL insert is
+now accepted. If you're touching `sql/schema.sql` again, don't reintroduce
+`NOT NULL` on these two columns without also changing `clean.py`'s behavior.
 
 ## Environment notes
 
@@ -99,15 +99,25 @@ first.
 
 ## Next action
 
-Start Step 4: the cleaner/transformer. Reads `staging/cgd_disbursement.csv`
-and `staging/ocsc_workforce.csv` (from Step 3) and produces the
-warehouse-ready rows: `.strip()` text fields, decide + implement the
-divide-by-zero behavior for `disbursed_pct`/`share_pct` (see "Known edge
-cases for Step 4" above), compute `remaining` and `is_leaf`, and unpivot
-each CGD ministry row into 3 long-format rows (one per expense type:
-`รายจ่ายประจำ`/`รายจ่ายลงทุน`/`รวม`). Follow the same per-step format
-(files / code / commands / expected output / test / explain) as Steps 0-3.
+Start Step 5: the loader. Reads `staging/cgd_disbursement_clean.csv` and
+`staging/ocsc_workforce_clean.csv` (from Step 4) and performs an idempotent
+upsert into `warehouse/warehouse.duckdb`'s dim/fact tables (`sql/schema.sql`,
+Step 2). Order matters: dims before facts, and `dim_expense_type` /
+`dim_personnel_category` before resolving CGD/OCSC's text fields into
+surrogate keys — neither dimension is seeded by the DDL itself. Specifically
+needs to: (1) insert `dim_expense_type`'s 3 rows with `is_leaf`; (2) insert
+`dim_personnel_category` rows and then resolve `ocsc_workforce_clean.csv`'s
+plain-text `parent_category` into `parent_category_key` via lookup; (3)
+insert/reuse `dim_ministry`, `dim_date` (remember `date_natural_key`); (4)
+convert the clean CSVs' empty-string NULLs (`disbursed_pct`/`share_pct`)
+into real SQL NULLs on insert — csv.DictWriter wrote `None` as `''`, not the
+literal word NULL, so a naive `float('')` will crash; (5) make re-running
+the loader on the same input not create duplicate rows (the fact tables'
+composite PRIMARY KEYs will reject exact duplicates, but decide what
+"re-run with updated numbers for the same grain" should do — update or
+reject). Follow the same per-step format (files / code / commands /
+expected output / test / explain) as Steps 0-4.
+
 Note: `raw/manifest.json` (hash/url/timestamp tracking for idempotent
 re-downloads) is not built yet — that belongs to Step 6's detector, not
-Step 3's extractor, since Step 3 only reads files already sitting in
-`raw/`, it doesn't fetch or hash them.
+Step 3's extractor.

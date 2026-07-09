@@ -94,7 +94,10 @@ CREATE TABLE IF NOT EXISTS fact_disbursement (
     po_reserved           DOUBLE NOT NULL,  -- PO+สำรองเงินมีหนี้
     disbursed             DOUBLE NOT NULL,  -- เบิกจ่าย
     remaining             DOUBLE NOT NULL,  -- derived: budget_after_transfer - disbursed
-    disbursed_pct         DOUBLE NOT NULL,  -- derived: disbursed / budget_after_transfer * 100 (recomputed, NOT the Excel formula)
+    disbursed_pct         DOUBLE,           -- derived: disbursed / budget_after_transfer * 100 (recomputed, NOT the
+                                             -- Excel formula). Nullable: Step 4's clean.py stores NULL, not inf/crash,
+                                             -- when budget_after_transfer = 0 (not reachable in today's data, but the
+                                             -- column must allow it or the loader would fail when it happens).
     PRIMARY KEY (date_key, ministry_key, expense_type_key)
 );
 
@@ -110,7 +113,9 @@ CREATE TABLE IF NOT EXISTS fact_workforce_summary (
     personnel_category_key INTEGER NOT NULL REFERENCES dim_personnel_category(personnel_category_key),
     source_id              INTEGER NOT NULL REFERENCES dim_source(source_id),
     headcount              BIGINT NOT NULL,   -- คน
-    share_pct              DOUBLE NOT NULL,   -- derived: headcount / grand_total_headcount * 100
+    share_pct              DOUBLE,            -- derived: headcount / grand_total_headcount * 100. Nullable for the
+                                                -- same reason as fact_disbursement.disbursed_pct: NULL when the
+                                                -- grand-total denominator is 0, not inf/crash.
     hierarchy_level        TINYINT NOT NULL,  -- 0 = grand total, 1 = subtotal, 2 = leaf category
     parent_category_key    INTEGER REFERENCES dim_personnel_category(personnel_category_key),  -- NULL for grand total
     is_leaf                BOOLEAN NOT NULL,  -- WHERE is_leaf = true => SUM(headcount) is correct, no double count
