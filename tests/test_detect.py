@@ -47,6 +47,7 @@ import pytest
 
 from detect import (
     CGD_REPORT_TITLE_PREFIX,
+    CgdReport,
     find_latest_cgd_report,
     format_cgd_result,
     html_has_file_links,
@@ -68,10 +69,11 @@ def test_find_latest_cgd_report_from_real_fixture():
     result = find_latest_cgd_report(html)
 
     assert result is not None
-    title, report_date = result
-    assert title.startswith(CGD_REPORT_TITLE_PREFIX)
-    assert report_date == date(2026, 7, 3)
-    assert "3 กรกฎาคม 2569" in title
+    assert result.title.startswith(CGD_REPORT_TITLE_PREFIX)
+    assert result.report_date == date(2026, 7, 3)
+    assert "3 กรกฎาคม 2569" in result.title
+    # the real row's href is a javascript:openDownload(...) call, not a plain URL
+    assert result.download_href.startswith("javascript:openDownload(")
 
 
 def test_find_latest_cgd_report_picks_max_date_not_first_row():
@@ -79,7 +81,7 @@ def test_find_latest_cgd_report_picks_max_date_not_first_row():
     must not rely on that — verified by checking it against every row, not
     just confirming the first row's date came back."""
     html = (FIXTURES_DIR / "cgd_listing_sample.html").read_text(encoding="utf-8")
-    _, report_date = find_latest_cgd_report(html)
+    result = find_latest_cgd_report(html)
 
     # every other date visible in the real fixture must be older
     other_known_dates = [
@@ -87,7 +89,7 @@ def test_find_latest_cgd_report_picks_max_date_not_first_row():
         date(2026, 6, 12), date(2026, 6, 5), date(2026, 5, 31),
         date(2026, 5, 22), date(2026, 5, 15), date(2026, 5, 8),
     ]
-    assert all(report_date > d for d in other_known_dates)
+    assert all(result.report_date > d for d in other_known_dates)
 
 
 def test_find_latest_cgd_report_returns_none_on_structural_change():
@@ -98,20 +100,20 @@ def test_find_latest_cgd_report_returns_none_on_structural_change():
 
 
 def test_format_cgd_result_new_file_found():
-    latest = ("ผลการเบิกจ่ายเงิน ณ วันที่ 3 กรกฎาคม 2569", date(2026, 7, 3))
+    latest = CgdReport(title="ผลการเบิกจ่ายเงิน ณ วันที่ 3 กรกฎาคม 2569", report_date=date(2026, 7, 3), download_href="javascript:openDownload('a','b','/cs/Satellite?x');")
     message = format_cgd_result(latest, known_date=date(2026, 6, 26))
     assert "new file found" in message
     assert "2026-07-03" in message
 
 
 def test_format_cgd_result_nothing_new():
-    latest = ("ผลการเบิกจ่ายเงิน ณ วันที่ 3 กรกฎาคม 2569", date(2026, 7, 3))
+    latest = CgdReport(title="ผลการเบิกจ่ายเงิน ณ วันที่ 3 กรกฎาคม 2569", report_date=date(2026, 7, 3), download_href="javascript:openDownload('a','b','/cs/Satellite?x');")
     message = format_cgd_result(latest, known_date=date(2026, 7, 3))
     assert "nothing new" in message
 
 
 def test_format_cgd_result_no_known_date_counts_as_new():
-    latest = ("ผลการเบิกจ่ายเงิน ณ วันที่ 3 กรกฎาคม 2569", date(2026, 7, 3))
+    latest = CgdReport(title="ผลการเบิกจ่ายเงิน ณ วันที่ 3 กรกฎาคม 2569", report_date=date(2026, 7, 3), download_href="javascript:openDownload('a','b','/cs/Satellite?x');")
     message = format_cgd_result(latest, known_date=None)
     assert "new file found" in message
 

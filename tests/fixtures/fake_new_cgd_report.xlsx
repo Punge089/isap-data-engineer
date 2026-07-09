@@ -1,0 +1,14 @@
+THIS IS NOT A REAL XLSX FILE.
+
+It is a placeholder fixture used only by tests/test_download.py to stand in
+for the bytes of a freshly downloaded CGD report. download.py's job stops
+at saving bytes to disk and recording their sha256 in raw/manifest.json —
+it never parses the file's contents (that's extract.py's job, in a later
+pipeline step) — so the download-path test doesn't need real xlsx binary
+data, only some deterministic bytes to hash and round-trip.
+
+Used because there was nothing new to download from the real CGD site at
+the time Step 7 was built (detect.py already reported "nothing new" against
+the live site) — see HANDOFF.md for the live-run proof of the "nothing new"
+path, and tests/test_download.py for how this fixture proves the "new file"
+path instead.

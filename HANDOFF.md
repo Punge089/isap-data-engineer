@@ -38,8 +38,8 @@ first.
 | 4 — Cleaner/transformer | ✅ Done | `src/clean.py` + `tests/test_clean.py` (7 pytest cases, all green). Reads Step 3's staging CSVs, writes `staging/cgd_disbursement_clean.csv` (72 rows — 24 ministries × 3 expense types, unpivoted) and `staging/ocsc_workforce_clean.csv` (25 rows). Recomputes `disbursed_pct`/`share_pct` from raw numbers (never trusts the Excel-reported percent — matches within float precision, verified). **Divide-by-zero decision (closes the Step 2 edge-case note): both return `None`/NULL when the denominator is 0**, not `inf` or a crash — not reachable in today's data (checked: no ministry has `budget_after_transfer == 0`; OCSC grand total is 3,004,485), covered by a synthetic-row unit test since real data can't exercise it. `is_leaf` computed both places: CGD from a fixed expense-type set (`รวม` = rollup = not leaf), OCSC from `hierarchy_level == 2`. `parent_category` is deliberately left as **plain stripped text, not a resolved key** — `dim_personnel_category` isn't populated until Step 5's loader runs, so resolving it here would mean guessing; this is a documented Step 5 dependency, not an oversight. |
 | 5 — Loader | ✅ Done | `src/load.py` + `tests/test_load.py` (6 pytest cases, all green). Reads Step 4's clean CSVs + `raw/manifest.json`, idempotent-loads both facts via `ON CONFLICT (natural key) DO NOTHING` — **proven by running the real loader twice and diffing actual row counts, not by inspecting the code**: `dim_date` 2, `dim_ministry` 24, `dim_expense_type` 3, `dim_personnel_category` 25, `dim_source` 2, `fact_disbursement` 72, `fact_workforce_summary` 25, identical both runs. **Schema fix required first:** `dim_source` had no natural-key UNIQUE constraint (only a surrogate PK), so `ON CONFLICT (file_hash)` had nothing to target and would have silently duplicated a row every run — added `file_hash VARCHAR NOT NULL UNIQUE` to `sql/schema.sql`, updated `tests/test_schema.py`'s seed helpers to supply it, re-ran full suite to confirm no regressions. `init_db.py` refactored to expose `ensure_schema(con)` so `load.py` can guarantee tables exist without requiring `init_db.py` to have run first. **New assumption, not in any config/manifest:** CGD's `fiscal_year_be` is derived from `report_date` using the standard Thai Oct–Sep fiscal year rule (`thai_fiscal_year_be()` in `load.py`), direction locked in by `test_thai_fiscal_year_be_cutover_direction` (2025-09-30 → 2568, 2025-10-01 → 2569). **This rule has only ever been checked against one real report, dated 2026-07-03 (deep mid-year) — it has never been cross-checked against an actual report published Oct-Dec, re-verify the moment Step 6 pulls one.** |
 | 6 — Latest-file detector (web scraping) | ✅ Done (CGD fully automated, OCSC manual-fallback) | `src/detect.py` + `tests/test_detect.py` (13 pytest cases, all green) + `tests/fixtures/*.html` (real saved pages, 3 of them). **Environment issue found and actually fixed, not worked around:** this machine's antivirus (Norton) does local HTTPS-scanning by re-signing every TLS connection with its own generated root cert ("Norton Web/Mail Shield Root") — confirmed by reading the actual certificate bytes. Windows trusts that root; Python's bundled `certifi` list doesn't, so every `requests` call failed `SSLError`, even to `google.com`. Fixed for real by adding `pip-system-certs` to `requirements.txt`, which makes Python trust the Windows cert store — confirmed working: `requests.get('https://www.google.com')` now succeeds with zero special flags, and **the actual shipped, unmodified `python src/detect.py` was then run live against both real sites, no `verify=False`, no bypass.** **CGD: fully works, live-verified.** Real 200, real HTML, parser (`parse_thai_be_date` against the table's dedicated `DD/MM/YYYY`-BE column) correctly reports "nothing new" against the live site (matches `raw/manifest.json`'s 2026-07-03 exactly). **OCSC: two DIFFERENT real responses observed on two separate live attempts against the same URL — both stand, neither supersedes the other, see "Open risk" note below.** `detect.py`'s `check_ocsc()` handles both: (1) a genuine Cloudflare managed JS challenge (HTTP 403, "Just a moment...", saved as `tests/fixtures/ocsc_cloudflare_challenge.html`), and (2) a clean, non-challenged 200 with real WordPress/Elementor HTML (saved as `tests/fixtures/ocsc_real_page_no_file_links.html`) that STILL has zero `.xlsx`/`.pdf`/`.zip` links anywhere in 369KB of page — the report list is rendered by a JS-driven filter widget (`form.custom-field-filter-form` → `wp-admin/admin-ajax.php`), not present in static HTML. Both are real, both are handled (`html_has_file_links()` checks directly rather than assuming), and manual-check fallback is the right call either way (OCSC publishes yearly, low impact). **Bug found and fixed on the CGD side too:** `load_known_cgd_date()` originally returned the *first* manifest entry matching `source=='CGD'`, not the latest — same class of ordering bug already flagged for `load.py`. Fixed to take `max()` across all matching entries (split into a pure `latest_cgd_date_from_manifest(manifest: dict)` for testability), proven order-independent with two fixture tests (ascending and descending manifest order, same answer both ways) — mirrors the exact discipline `find_latest_cgd_report` already applies to page rows. **New info for Step 7:** CGD's report links are NOT plain `<a href>` — they're `javascript:openDownload('NewsStat_C', id, '/cs/Satellite?...')` calls; the real download URL is the 3rd argument string, extractable without running JS. |
-| 7 — Scheduler + schema validation | ⬜ Not started | This is the next step. Needs to: (1) actually download the new CGD file when `detect.py` reports one (extracting the real URL from the `openDownload(...)` JS call — see Step 6 note above), append a new `raw/manifest.json` entry in the exact shape `load.py`'s `load_manifest()` already expects; (2) revisit `load_manifest()`'s one-entry-per-source assumption once a second CGD entry can actually exist (see Step 5's note); (3) wire up GitHub Actions cron (`PROJECT_SPEC.md §9`); (4) schema validation that fails loud, not warns, on unexpected structure (§9/§11). |
-| 8 — Tests | ⬜ Not started | |
+| 7 — Downloader + schema validation (local logic; GitHub Actions cron itself still pending) | ✅ Done | `src/download.py` + `src/validate_structure.py` + `tests/test_download.py` (9 cases) + `tests/test_validate_structure.py` (6 cases), all green. **`download_cgd()`**: extracts the real download URL from CGD's `javascript:openDownload('NewsStat_C', id, '/cs/Satellite?...')` href (regex on the 3rd argument + `urljoin`, confirmed against the real Step 6 fixture), downloads the bytes, hashes them, and appends (never overwrites) a new `raw/manifest.json` entry — only if the hash isn't already in the manifest (duplicate-content dedup, tested). Ran for real against the live CGD site: `CGD: nothing new to download (latest on site is 2026-07-03, already have it)` — correctly stopped before ever attempting a file download, and confirmed `raw/manifest.json`/`raw/cgd/` were untouched afterward. Since there was nothing new to actually download today, the "new file found → download → append" path is proven with a fixture (`tests/fixtures/fake_new_cgd_report.xlsx`, explicitly a placeholder, not a real xlsx — download.py never parses file contents, only hashes/saves bytes) standing in for the real bytes, with the listing page and the HTTP GET both faked via `monkeypatch` — stated explicitly, not hidden. **`download_ocsc()`** refuses immediately with a manual-check message and is tested to make zero network calls (asserts if `requests.get`/`detect.fetch_html` are even invoked). **`validate_structure.py`**: `validate_cgd_structure()` checks 8 header anchor cells + the total-row label against `config/cgd.yaml`'s new `validation:` section (exact real text, including embedded `\n`, re-verified against the live raw file) before `extract.py` parses anything — wired into `extract.py`'s `run_cgd()`. Tested against 5 deliberately mangled fake sheets (wrong sheet name, mangled header cell, truncated header, moved/wrong total-row label, sheet too short to reach the total row) — all raise `StructureValidationError`, plus the real committed file still passes; also proven through `extract.py`'s real `run_cgd()` entry point (not just calling `validate_cgd_structure()` directly), confirming the wiring itself stops extraction and never touches `staging/cgd_disbursement.csv`. **OCSC has no structure validation** — this is deliberate, not an oversight: there is no automated OCSC download path (Step 6) for validation to protect, so there is nothing for `validate_structure.py` to run before yet. **Two ordering bugs fixed as part of this step:** (1) `detect.py`'s `CgdReport` was refactored from a plain tuple to a `NamedTuple` (adds `download_href`) so `download.py` can get the real link without re-scraping — required updating `format_cgd_result` and all of `test_detect.py`, re-verified 13/13 still pass; (2) `load.py`'s `load_manifest()` — previously a `{source: entry}` dict comprehension that silently kept whichever entry iterated last, not deliberately "latest" — fixed to explicit `max()` by `report_date`/`fiscal_year_be`, same discipline as `detect.py`. New test `test_two_cgd_manifest_entries_across_two_runs_produce_two_dim_source_rows` proves two CGD manifest entries (simulated across two runs) produce two `dim_source` rows, not one overwriting the other. **GitHub Actions YAML wrapper is explicitly NOT built yet** — this step was scoped to local, fully-testable logic only; the cron wrapper is a thin follow-up once this is confirmed solid. **Known, accepted non-atomicity:** `download_cgd()`'s file-write and manifest-append aren't atomic together — an interrupted run (crash/kill between the two) just causes a redundant re-download on the next attempt, safe because dedup is by content hash, not a corruption risk; not a gap, not fixing it. |
+| 8 — Tests | ⬜ Not started | Much of this already exists (55 tests across 7 files as of Step 7) — this step is about filling gaps (e.g. an actual end-to-end smoke test running extract→clean→load→detect→download in sequence against a temp warehouse) and organizing/documenting the suite, not starting from zero. |
 | 9 — Suggestions to Senior + docs + interview prep | ⬜ Not started | |
 
 ## Locked decisions — do not re-litigate these
@@ -118,6 +118,27 @@ crash on either; don't silently treat a challenge as "nothing new") rather
 than picking one as "the real behavior" and writing code that only expects
 that one.
 
+## Decision: the monthly CI workflow does NOT commit warehouse.duckdb — CLOSED, open since Step 0/6
+
+`.github/workflows/monthly_check.yml` only commits `raw/manifest.json` and
+any new `raw/cgd/*.xlsx` back to the repo. It does **not** rebuild or commit
+`warehouse.duckdb`, even though the runner already has everything needed to
+do so (it runs `extract.py`→`clean.py`→`load.py` in the same job).
+
+**Why (option (a), not (b)):** `warehouse.duckdb` is a build artifact —
+`README.md` and `.gitignore` already say so for local runs, and this
+workflow doesn't special-case that. Committing a rebuilt binary DuckDB file
+every month would (1) contradict the existing "generated, not committed"
+rule for everyone else who runs the pipeline locally — a second, CI-only
+exception to the same rule is confusing, not simplifying; (2) bloat repo
+history with a full binary diff every month, since DuckDB files don't diff
+usefully in git; (3) create a false impression that the committed
+`warehouse.duckdb` is always current, when anyone with local uncommitted
+data changes would immediately diverge from it anyway. The tradeoff:
+after a CI run updates `raw/`, the warehouse isn't automatically
+queryable until someone runs `python src/load.py` — a few seconds, and
+the same step a local contributor already runs after `git pull`.
+
 ## Environment notes
 
 - Repo layout, `.gitignore` policy (raw/ tracked, staging/ and warehouse/*.duckdb
@@ -134,33 +155,22 @@ that one.
 
 ## Next action
 
-Start Step 7: downloader + scheduler + schema validation (ข้อ 3c). Needs to:
+Step 7's LOCAL logic (download + validation) is done — see the table row
+above. What's still open:
 
-1. When `src/detect.py`'s `check_cgd()` reports a new file, actually
-   download it. The link is not a plain `<a href>` — it's
-   `javascript:openDownload('NewsStat_C', id, '/cs/Satellite?blobcol=...')`;
-   the real download URL is the 3rd argument of that call (extract via
-   string parsing, e.g. split on `'` — no JS execution needed, confirmed
-   while building Step 6).
-2. Append a new entry to `raw/manifest.json` in the exact shape `load.py`'s
-   `load_manifest()` already expects (`source`, `source_url`, `local_path`,
-   `report_date` for CGD / `fiscal_year_be` for OCSC, `sha256`,
-   `downloaded_at`) — don't invent a different shape.
-3. Revisit `load.py`'s `load_manifest()`, which currently assumes exactly
-   one entry per source (a dict keyed by `source` — a second CGD entry
-   would silently overwrite the first, not error). This was flagged in
-   Step 5/6 as a known gap, not fixed preemptively since there was nothing
-   real to test it against; now that Step 7 can actually produce a second
-   entry, it needs to pick "latest entry for this source," not "the only
-   one."
-4. OCSC has no automated detection (Cloudflare-blocked, see Step 6) — Step
-   7's automation should only attempt CGD; OCSC stays a documented manual
-   step (check once a year).
-5. Wire up the GitHub Actions monthly cron (`PROJECT_SPEC.md §9`).
-6. Schema/structure validation that fails loud (raises), not warns, when a
-   newly downloaded file's structure doesn't match `config/cgd.yaml`'s
-   assumptions (§9/§11) — this is what answers ข้อ 3c ("ถ้ามีไฟล์ใหม่
-   โครงสร้างเหมือนเดิม ดูดเข้าได้ไม่พัง").
+1. **GitHub Actions monthly cron wrapper** (`PROJECT_SPEC.md §9`) — a thin
+   YAML file that runs, in order: `extract.py` → `clean.py` → `load.py` (if
+   there's new data) and separately `detect.py`/`download.py` on a schedule.
+   Nothing about this needs new Python logic; it's wiring existing,
+   already-tested scripts into a workflow file.
+2. Once the cron exists, the full loop (detect → download → validate →
+   extract → clean → load) should be run for real against a genuinely new
+   CGD file the next time one is published (currently: nothing new as of
+   this writing) — everything up to that point has only been proven via
+   fixtures/mocks for the "new file" path, and live for the "nothing new"
+   path.
+3. Then Step 8 (tests — much of the suite already exists, see the table
+   row above) and Step 9 (senior suggestions + docs + interview prep).
 
 Follow the same per-step format (files / code / commands / expected
-output / test / explain) as Steps 0-6.
+output / test / explain) as Steps 0-7.

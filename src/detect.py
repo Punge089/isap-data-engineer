@@ -41,6 +41,7 @@ from __future__ import annotations
 import json
 from datetime import date
 from pathlib import Path
+from typing import NamedTuple
 
 import requests
 from bs4 import BeautifulSoup
@@ -58,6 +59,20 @@ HEADERS = {
 CGD_REPORT_TITLE_PREFIX = "ผลการเบิกจ่ายเงิน"
 
 
+class CgdReport(NamedTuple):
+    """One report row from CGD's listing page.
+
+    download_href is the raw <a href> string — for CGD that's a
+    javascript:openDownload(...) call, not a plain URL (see Step 6 finding
+    in this module's docstring). src/download.py is what actually extracts
+    the real download URL out of it; this module just carries it through
+    unparsed, since detect.py's own job is reporting, not downloading.
+    """
+    title: str
+    report_date: date
+    download_href: str
+
+
 # ---------------------------------------------------------------- parsing
 
 def parse_thai_be_date(text: str) -> date:
@@ -69,11 +84,10 @@ def parse_thai_be_date(text: str) -> date:
     return date(int(year_be_str) - 543, int(month_str), int(day_str))
 
 
-def find_latest_cgd_report(html: str) -> tuple[str, date] | None:
-    """Return (title, report_date) for the most recent report on the CGD
-    listing page, or None if no report rows were found at all — a
-    structural change worth failing loud on, not silently reporting
-    'nothing new'.
+def find_latest_cgd_report(html: str) -> CgdReport | None:
+    """Return the most recent report on the CGD listing page, or None if no
+    report rows were found at all — a structural change worth failing loud
+    on, not silently reporting 'nothing new'.
     """
     soup = BeautifulSoup(html, "html.parser")
 
@@ -98,13 +112,13 @@ def find_latest_cgd_report(html: str) -> tuple[str, date] | None:
         except ValueError:
             continue
 
-        reports.append((title, report_date))
+        reports.append(CgdReport(title=title, report_date=report_date, download_href=link.get("href", "")))
 
     if not reports:
         return None
     # Take the max by parsed date rather than trusting page order, in case
     # a future layout change reorders the rows.
-    return max(reports, key=lambda pair: pair[1])
+    return max(reports, key=lambda r: r.report_date)
 
 
 # ---------------------------------------------------------------- manifest
@@ -132,7 +146,7 @@ def load_known_cgd_date() -> date | None:
 
 # ---------------------------------------------------------------- reporting
 
-def format_cgd_result(latest: tuple[str, date] | None, known_date: date | None) -> str:
+def format_cgd_result(latest: CgdReport | None, known_date: date | None) -> str:
     if latest is None:
         return (
             "CGD: page fetched but no report rows found — the listing page's "
@@ -140,10 +154,9 @@ def format_cgd_result(latest: tuple[str, date] | None, known_date: date | None) 
             f"at {CGD_URL}"
         )
 
-    title, latest_date = latest
-    if known_date is None or latest_date > known_date:
-        return f"CGD: new file found — {title} ({latest_date.isoformat()})"
-    return f"CGD: nothing new (latest on site is {latest_date.isoformat()}, already have it)"
+    if known_date is None or latest.report_date > known_date:
+        return f"CGD: new file found — {latest.title} ({latest.report_date.isoformat()})"
+    return f"CGD: nothing new (latest on site is {latest.report_date.isoformat()}, already have it)"
 
 
 # ---------------------------------------------------------------- network

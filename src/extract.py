@@ -17,6 +17,8 @@ import csv
 import yaml
 from openpyxl import load_workbook
 
+from validate_structure import validate_cgd_structure
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_DIR = REPO_ROOT / "config"
 RAW_DIR = REPO_ROOT / "raw"
@@ -113,6 +115,10 @@ def write_csv(records: list[dict], out_path: Path) -> None:
 def run_cgd() -> Path:
     config = load_config("cgd")
     raw_file = find_raw_file("cgd")
+    # Step 7 (ข้อ 3c): a newly downloaded file's structure is never assumed
+    # to match config/cgd.yaml — this raises loudly (StructureValidationError)
+    # if it doesn't, instead of silently parsing wrong columns.
+    validate_cgd_structure(raw_file, config)
     records = extract_cgd(raw_file, config)
     out_path = STAGING_DIR / "cgd_disbursement.csv"
     write_csv(records, out_path)

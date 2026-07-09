@@ -49,8 +49,25 @@ def parse_float_or_none(value: str) -> float | None:
 
 
 def load_manifest() -> dict:
+    """{'CGD': latest CGD entry, 'OCSC': latest OCSC entry} -- the entry
+    with the latest report_date/fiscal_year_be per source, not just
+    "whichever happens to be last in the file". Manifest order is never
+    trusted, same discipline as detect.py's latest_cgd_date_from_manifest:
+    now that Step 7's downloader can genuinely append a second CGD entry,
+    a naive {entry["source"]: entry for entry in ...} dict comprehension
+    would silently keep whichever entry iterates last, not whichever is
+    actually newest.
+    """
     manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
-    return {entry["source"]: entry for entry in manifest["files"]}
+    cgd_entries = [e for e in manifest["files"] if e["source"] == "CGD"]
+    ocsc_entries = [e for e in manifest["files"] if e["source"] == "OCSC"]
+
+    result = {}
+    if cgd_entries:
+        result["CGD"] = max(cgd_entries, key=lambda e: e["report_date"])
+    if ocsc_entries:
+        result["OCSC"] = max(ocsc_entries, key=lambda e: e["fiscal_year_be"])
+    return result
 
 
 def thai_fiscal_year_be(report_date: date) -> int:

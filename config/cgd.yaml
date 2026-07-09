@@ -21,3 +21,21 @@ columns:
   recurring: {budget_after_transfer: 3,  allocated: 4,  spending_plan: 5,  po_reserved: 6,  disbursed: 7}
   capital:   {budget_after_transfer: 9,  allocated: 10, spending_plan: 11, po_reserved: 12, disbursed: 13}
   total:     {budget_after_transfer: 15, allocated: 16, spending_plan: 17, po_reserved: 18, disbursed: 19}
+
+# Step 7: src/validate_structure.py checks these exact cells (row, col,
+# expected text) against a downloaded file BEFORE extract.py trusts the
+# column indices above. Re-verified directly against raw/cgd/2026_07_03.xlsx
+# while building this. Text values are exact, including embedded '\n' —
+# these headers really do contain literal newlines in the source file.
+validation:
+  header_anchors:
+    - {row: 3, col: 0,  text: "ลำดับ\nที่"}
+    - {row: 3, col: 1,  text: "กระทรวง"}
+    - {row: 3, col: 3,  text: "รายจ่ายประจำ"}
+    - {row: 3, col: 9,  text: "รายจ่ายลงทุน"}
+    - {row: 3, col: 15, text: "รวม"}
+    - {row: 3, col: 21, text: "รหัสกระทรวง"}
+    - {row: 4, col: 3,  text: "วงเงิน\nงบประมาณ\nหลังโอน\nเปลี่ยนแปลง"}
+    - {row: 4, col: 7,  text: "เบิกจ่าย"}
+  total_row_label_col: 0
+  total_row_label_text: "รวม"

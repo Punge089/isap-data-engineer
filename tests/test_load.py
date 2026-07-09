@@ -10,6 +10,7 @@ property of the actual SQL constraints firing, not of load.py's Python
 logic, so the proof has to run against a real DuckDB connection.
 """
 
+import json
 from datetime import date
 from pathlib import Path
 
@@ -139,3 +140,67 @@ def test_dim_date_check_constraint_actually_rejects_bad_be_ce_pair(con):
             VALUES ('bad-test-key', NULL, 2569, 1111)
             """
         )
+
+
+def test_two_cgd_manifest_entries_across_two_runs_produce_two_dim_source_rows(con, tmp_path, monkeypatch):
+    """Step 7's downloader can now genuinely append a second CGD manifest
+    entry. This proves load_manifest()'s fix (max() by report_date, not
+    "whichever the dict comprehension keeps") actually results in TWO
+    accumulated dim_source rows across two separate pipeline runs, not one
+    entry silently overwriting the other's slot -- the exact bug flagged
+    in HANDOFF.md since Step 5.
+    """
+    manifest_path = tmp_path / "manifest.json"
+    monkeypatch.setattr(load_module, "MANIFEST_PATH", manifest_path)
+
+    # "Run 1": manifest has a single CGD entry, as if this were the very
+    # first download.
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "files": [
+                    {
+                        "source": "CGD",
+                        "source_url": "https://www.cgd.go.th/x",
+                        "local_path": "raw/cgd/2026_06_05.xlsx",
+                        "report_date": "2026-06-05",
+                        "sha256": "hash-run-1",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    load_module.load_dim_source(con, "CGD")
+
+    # "Run 2": download.py has since appended a second, newer CGD entry --
+    # note it's appended (existing entry untouched), not replacing it.
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "files": [
+                    {
+                        "source": "CGD",
+                        "source_url": "https://www.cgd.go.th/x",
+                        "local_path": "raw/cgd/2026_06_05.xlsx",
+                        "report_date": "2026-06-05",
+                        "sha256": "hash-run-1",
+                    },
+                    {
+                        "source": "CGD",
+                        "source_url": "https://www.cgd.go.th/x",
+                        "local_path": "raw/cgd/2026_07_03.xlsx",
+                        "report_date": "2026-07-03",
+                        "sha256": "hash-run-2",
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    load_module.load_dim_source(con, "CGD")
+
+    rows = con.execute(
+        "SELECT file_hash FROM dim_source WHERE agency = 'CGD' ORDER BY file_hash"
+    ).fetchall()
+    assert [r[0] for r in rows] == ["hash-run-1", "hash-run-2"]

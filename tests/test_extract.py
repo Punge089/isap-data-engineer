@@ -11,8 +11,11 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from openpyxl import Workbook
 
+import extract
 from extract import run_cgd, run_ocsc
+from validate_structure import StructureValidationError
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 STAGING_DIR = REPO_ROOT / "staging"
@@ -62,3 +65,29 @@ def test_ocsc_preserves_dirty_whitespace():
     df = pd.read_csv(STAGING_DIR / "ocsc_workforce.csv")
     dirty_name = df[df["category_name"].str.contains("องค์กรอิสระ", na=False)]["category_name"].iloc[0]
     assert dirty_name != dirty_name.strip()
+
+
+def test_run_cgd_raises_via_real_entry_point_on_mangled_structure(tmp_path, monkeypatch):
+    """Step 7 integration check: proves extract.py's REAL entry point
+    (run_cgd()) actually calls validate_cgd_structure() and stops before
+    writing anything, not just that the validation function raises
+    correctly in isolation (tests/test_validate_structure.py already
+    covers that in isolation). Points extract.RAW_DIR at a fake directory
+    containing a deliberately wrong sheet, using the real config/cgd.yaml
+    unchanged, and calls the real run_cgd()."""
+    fake_cgd_dir = tmp_path / "cgd"
+    fake_cgd_dir.mkdir()
+    wb = Workbook()
+    wb.active.title = "totally wrong sheet name"
+    wb.save(fake_cgd_dir / "mangled.xlsx")
+
+    monkeypatch.setattr(extract, "RAW_DIR", tmp_path)
+
+    staging_path = STAGING_DIR / "cgd_disbursement.csv"
+    before = staging_path.read_bytes()
+
+    with pytest.raises(StructureValidationError, match="not found"):
+        extract.run_cgd()
+
+    after = staging_path.read_bytes()
+    assert before == after  # validation failed before extract_cgd()/write_csv() ever ran

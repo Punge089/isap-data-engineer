@@ -1,0 +1,83 @@
+# Step 7 (cron wrapper): monthly automated check for a new CGD report.
+#
+# This is intentionally a thin wrapper around scripts that are already
+# fully tested locally (src/detect.py, src/download.py, src/extract.py,
+# src/clean.py, src/load.py) -- no new Python logic lives here, only
+# wiring. See HANDOFF.md's Step 7 entries for how each script was tested
+# before this workflow existed.
+#
+# Design decisions made here (full record in HANDOFF.md):
+#
+#   - Push directly to main using the default GITHUB_TOKEN (contents:
+#     write), instead of opening a PR (e.g. via
+#     peter-evans/create-pull-request). Chosen because: (1) this workflow
+#     only ever commits DATA (raw/manifest.json + a new raw/cgd/*.xlsx),
+#     never code; (2) the commit step only runs after extract/clean/load
+#     succeed, and validate_structure.py already fails loud on any
+#     structural mismatch before that point -- so a broken/mismatched file
+#     can never reach the commit step; (3) it needs no extra PAT/secret
+#     setup, and is simpler to explain and to demo live (a PR would need a
+#     manual merge click mid-demo).
+#   - warehouse.duckdb is NOT rebuilt or committed by this workflow -- it
+#     stays a local build artifact exactly as README.md/.gitignore already
+#     describe it, whether built locally or after pulling a CI-produced
+#     data update (run `python src/load.py` to refresh it). This closes
+#     the open question flagged since Step 0/6: option (a) chosen
+#     (raw/manifest only), not (b) (also committing the rebuilt warehouse).
+
+name: Monthly CGD data check
+
+on:
+  schedule:
+    - cron: '0 3 1 * *'  # 03:00 UTC on the 1st of every month
+  workflow_dispatch: {}   # manual "Run workflow" button -- for demos, no need to wait for the schedule
+
+permissions:
+  contents: write  # needed to push the manifest/raw-file update back to the repo
+
+jobs:
+  check-and-update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run detector (informational -- download.py does its own authoritative check independently)
+        run: python src/detect.py
+
+      - name: Run downloader
+        id: download
+        run: |
+          OUTPUT=$(python src/download.py)
+          echo "$OUTPUT"
+          {
+            echo "result<<DOWNLOAD_EOF"
+            echo "$OUTPUT"
+            echo "DOWNLOAD_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Run extract -> clean -> load (only if a new CGD file was actually downloaded)
+        if: contains(steps.download.outputs.result, 'downloaded new file')
+        run: |
+          python src/extract.py
+          python src/clean.py
+          python src/load.py
+
+      - name: Commit and push the new raw file + manifest (only if a new CGD file was actually downloaded)
+        if: contains(steps.download.outputs.result, 'downloaded new file')
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add raw/manifest.json raw/cgd/*.xlsx
+          git commit -m "Auto-update: new CGD report ($(date -u +%Y-%m-%d))"
+          git push origin HEAD:main
