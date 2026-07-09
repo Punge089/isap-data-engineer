@@ -139,6 +139,51 @@ after a CI run updates `raw/`, the warehouse isn't automatically
 queryable until someone runs `python src/load.py` — a few seconds, and
 the same step a local contributor already runs after `git pull`.
 
+## Open risk: CGD returned HTTP 403 from the GitHub Actions runner IP — NOT closed, needs monitoring
+
+The workflow was actually triggered live (`workflow_dispatch`, run
+[29034793774](https://github.com/Punge089/isap-data-engineer/actions/runs/29034793774),
+2026-07-09). Both `detect.py` and `download.py` got
+`HTTPError: 403 Client Error: Forbidden` fetching CGD's listing page —
+**from GitHub's hosted-runner IP (Azure eastus)**. The same URL returns a
+normal 200 with real content from the local dev machine every time it's
+been tried. This is a different failure mode than anything seen locally,
+and matches the kind of IP-range blocking government sites sometimes apply
+to cloud/datacenter traffic — exactly the risk `PROJECT_SPEC.md §11`
+already named ("โดนบล็อค IP"), now concretely observed for the first time.
+
+**First problem this exposed, since fixed:** that first run finished green
+(22s, no action taken — correct, since nothing should happen on a failed
+check), but a real "nothing new" month would have looked *exactly* the
+same in the Actions list — both leave the two conditional steps skipped,
+both show a plain green checkmark. A persistent IP block would have been
+invisible, blending into normal no-op months indefinitely. Fixed by adding
+a "Flag CGD check failures distinctly from 'nothing new' months" step:
+fails the job (`exit 1` + an `::error::` annotation) whenever
+`download.py`'s CGD line indicates the check itself didn't complete
+(`could not fetch` / `no report rows found`), leaving `nothing new to
+download` / `downloaded new file` (and the rarer duplicate-hash-skip
+message) to pass through as the legitimate non-failures they are.
+**Re-triggered live to prove it** (run
+[29035432857](https://github.com/Punge089/isap-data-engineer/actions/runs/29035432857)):
+against the same real 403, the run now shows red ✗ with the annotation
+`CGD check did NOT complete this run (this is a FAILED check, not a
+normal 'nothing new' month): CGD: could not fetch listing page
+(HTTPError: 403 ...)` — confirmed via the GitHub API that this still
+correctly took no action (no pipeline run, no commit).
+
+**What's genuinely still unverified:** this is two data points from two
+runs made minutes apart, not proof of a pattern. It is not yet known
+whether CGD blocks GitHub Actions' IP ranges consistently (which would
+mean this workflow's CGD half never succeeds automatically, only ever
+detecting new files from a local machine or a self-hosted runner) or
+whether this was a one-off/transient response. Don't assume either
+conclusion — watch the first several real scheduled runs (now that a
+persistent block would actually show up as a red ✗ in the Actions tab,
+instead of silently) before deciding this needs a workaround (e.g. a
+self-hosted runner, or a proxy — both add real complexity, not to be
+reached for until the block is confirmed consistent).
+
 ## Environment notes
 
 - Repo layout, `.gitignore` policy (raw/ tracked, staging/ and warehouse/*.duckdb
