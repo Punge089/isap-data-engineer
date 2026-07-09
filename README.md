@@ -6,7 +6,7 @@ it into a small DuckDB warehouse for analysis.
 
 Built for the Innosoft Student Associate Program (ISAP) selection task.
 See [`PROJECT_SPEC.md`](./PROJECT_SPEC.md) for the full design doc
-(scoring rubric breakdown, warehouse design, pipeline architecture, risks).
+(warehouse design, pipeline architecture, risks)
 
 ## Status
 

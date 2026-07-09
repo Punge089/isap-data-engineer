@@ -12,6 +12,7 @@ with a small fake table rather than only against real data.
 import csv
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from clean import clean_cgd, clean_ocsc
@@ -39,6 +40,16 @@ def test_cgd_unpivot_row_count(cgd_raw_rows):
     assert len(cgd_raw_rows) == 24  # sanity: Step 3's output hasn't drifted
     cleaned = clean_cgd(cgd_raw_rows)
     assert len(cleaned) == 72  # 24 ministries x 3 expense types
+
+
+def test_cgd_is_leaf_consistent_per_expense_type(cgd_raw_rows):
+    """Every row sharing the same expense_type_name must have the same
+    is_leaf value. Guards against is_leaf being hardcoded independently
+    in clean.py and (later) in Step 5's dim_expense_type seeding, which
+    could silently drift out of sync."""
+    cleaned = clean_cgd(cgd_raw_rows)
+    df = pd.DataFrame(cleaned)
+    assert df.groupby("expense_type_name")["is_leaf"].nunique().eq(1).all()
 
 
 def test_cgd_is_leaf_correct_both_expense_types(cgd_raw_rows):
