@@ -1,0 +1,81 @@
+
+======================================================================
+1. SHEET INVENTORY (all ~68 sheets in the OCSC file)
+======================================================================
+Total sheets: 68
+Sheets with rows_with_data > 2 (usable as a table): 59
+Sheets with rows_with_data <= 2 (chart-only / cover / empty): 9
+
+-- Chart-only / near-empty sheets (excluded from scope, see PROJECT_SPEC.md §3) --
+  'ปกหน้า'     rows_with_data= 0  ""
+  '11'         rows_with_data= 2  "ภาพรวมกำลังคนภาครัฐ ปีงบประมาณ พ.ศ. 2567"
+  '15'         rows_with_data= 1  "จำนวนกำลังคนภาครัฐในฝ่ายพลเรือนรวมทุกประเภท ปีงบประมาณ พ.ศ. "
+  '16'         rows_with_data= 1  "ส่วนราชการระดับกระทรวงและหน่วยงานที่มีกำลังคนมากที่สุด 10 อั"
+  '73'         rows_with_data= 1  "พนักงานราชการ ปีงบประมาณ พ.ศ. 2567 จำแนกส่วนราชการระดับกระทร"
+  '74'         rows_with_data= 1  "ลูกจ้าง (ลูกจ้างประจำและลูกจ้างชั่วคราว) ปีงบประมาณ พ.ศ. 256"
+  '82'         rows_with_data= 1  "การกระจายของข้าราชการพลเรือนสามัญแต่ละประเภทตำแหน่ง และระดับ"
+  '86'         rows_with_data= 2  "อายุของข้าราชการพลเรือนสามัญ ปีงบประมาณ พ.ศ. 2567"
+  'ปกหลัง'     rows_with_data= 0  ""
+
+======================================================================
+2. DEEP DIVE: sheet "12"
+======================================================================
+Total rows in sheet: 32
+
+-- Full content (trimmed) --
+0 ['ภาพรวมกำลังคนภาครัฐ ปีงบประมาณ พ.ศ. 2567']
+2 ['กำลังคนภาครัฐ', 'จำนวน (คน)', 'ร้อยละ']
+3 ['รวมทั้งหมด', 3004485, 100]
+4 ['ข้าราชการ', 1756606, 58.466126474254324]
+5 ['ครูและบุคลากรทางการศึกษา', 444168, 14.783498669489115]
+6 ['พลเรือนสามัญ', 414088, 13.782328751849318]
+7 ['ทหาร', 368711, 12.272019996771494]
+8 ['ตำรวจ', 213086, 7.092263732386749]
+9 ['พนักงานส่วนตำบล', 81163, 2.7013947481847973]
+10 ['พนักงานเทศบาล', 70367, 2.3420652790744505]
+11 ['ครูส่วนท้องถิ่น', 53574, 1.7831342143495477]
+12 ['กรุงเทพมหานคร', 35126, 1.169118834009822]
+13 ['องค์การบริหารส่วนจังหวัด', 27833, 0.9263817259863172]
+14 ['องค์กรอิสระตามรัฐธรรมนูญ ', 26364, 0.8774881552079641]
+15 ['พลเรือนในสถาบันอุดมศึกษา', 9408, 0.313131867857553]
+16 ['ตุลาการ', 5297, 0.17630309354182164]
+17 ['อัยการ', 4257, 0.14168817617661594]
+18 ['รัฐสภาสามัญ', 3164, 0.10530922936876037]
+19 ['กำลังคนประเภทอื่น', 1247879, 41.533873525745676]
+20 ['ลูกจ้างชั่วคราว', 271917, 9.050369697302532]
+21 ['พนักงานจ้าง', 223528, 7.4398108161631695]
+22 ['พนักงานรัฐวิสาหกิจ', 219014, 7.289568761368422]
+23 ['พนักงานราชการ', 179567, 5.9766316024210475]
+24 ['พนักงานมหาวิทยาลัย', 136859, 4.55515670738912]
+25 ['พนักงานกระทรวงสาธารณสุข', 121285, 4.036798319845165]
+26 ['ลูกจ้างประจำ', 82111, 2.7329475767061577]
+27 ['พนักงานองค์การมหาชน', 13598, 0.45259004455006435]
+28 ['หมายเหตุ : ทหาร ประกอบด้วย ข้าราชการทหารและทหารกองประจำการ']
+
+-- Check: is this really a flat list, or a hidden hierarchy? --
+  sum of 14 children under 'ข้าราชการ': 1756606  vs subtotal row value: 1756606  -> match: True
+  sum of 8 children under 'กำลังคนประเภทอื่น': 1247879  vs subtotal row value: 1247879  -> match: True
+  subtotal_1 + subtotal_2 = 3004485  vs grand total row value: 3004485  -> match: True
+
+  CONFIRMED: this is a 2-level hierarchy (grand total -> 2 subtotals -> 22 leaf
+  categories), not 29 independent categories. SUM(headcount) over all rows as-is
+  would overcount by roughly 3x (total + 2 subtotals + their children all add up).
+
+-- Check: stray whitespace on category names --
+  category names with leading/trailing whitespace: ['องค์กรอิสระตามรัฐธรรมนูญ ']
+
+======================================================================
+3. PROBLEMS FOUND (answers requirement 2)
+======================================================================
+1. Out of ~68 sheets, most are chart-only (title text but no tabular cell data) or cover/TOC pages. See the inventory above for the exact list. This is the concrete evidence behind scoping to sheet '12' as core and treating the rest as out-of-scope (PROJECT_SPEC.md §3) rather than a guess.
+
+2. Sheet names are page numbers (e.g. '17-29', '99-113'), not descriptive labels — you cannot tell what a sheet contains from its name alone. The 'สารบัญ' (table of contents) sheet is the only map from topic to page number, so any tool selecting sheets by topic must parse it first.
+
+3. Sheet '12' LOOKS like a flat 3-column table (category / headcount / percent) but is actually a 2-level hierarchy: 1 grand total row, 2 subtotal rows, and 22 leaf category rows, all mixed together with no column indicating hierarchy level. Verified programmatically above: child rows sum exactly to their subtotal, and both subtotals sum exactly to the grand total. A naive SUM(headcount) over all 29 rows overcounts by ~3x. The cleaner must tag each row's hierarchy level (or keep only leaf rows) before loading — this changes the fact table design from what PROJECT_SPEC.md §4.2 currently assumes ('flat list').
+
+4. At least one category name has trailing whitespace ('องค์กรอิสระตามรัฐธรรมนูญ ') — must .strip() every text field before using it as a dimension key, or it will create a duplicate dimension row that differs only by invisible whitespace.
+
+5. A footnote sentence ('หมายเหตุ : ทหาร ประกอบด้วย...') sits in the same column as category names, one row below the last real data row, with no structural marker separating it from data — must be excluded by row position, not by any content rule (it has no keyword that reliably identifies it as a footnote everywhere in this file).
+
+6. Percent values are long, unrounded floats (e.g. 58.466126474254324) — fine to store as-is (more precision is not a problem), but must be rounded only at presentation time, not in the stored value, or re-deriving percent-of-total later would compound rounding error.
+

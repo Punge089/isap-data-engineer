@@ -1,0 +1,19 @@
+# OCSC — กำลังคนภาครัฐ ปีงบประมาณ พ.ศ. 2567, sheet '12'
+# Row boundaries verified in reports/eda_ocsc.txt (Step 1 EDA), re-confirmed
+# directly against raw/ocsc/thaigovmanpower2567_4.xlsx while building this
+# config. Indices are 0-based, same convention as src/eda_ocsc.py.
+#
+# Real row count = 1 grand total + 2 subtotals + 22 leaf categories = 25
+# data rows (rows 3-27 inclusive). NOT 29 — that number does not match the
+# verified row indices below; flagging this explicitly since it was wrong
+# in an earlier draft of this config.
+
+sheet_name: "12"
+header_row: 2
+grand_total_row: 3
+subtotal_rows: [4, 19]
+leaf_row_ranges: [[5, 18], [20, 27]]   # inclusive; 14 + 8 = 22 leaf categories
+footnote_row: 28                        # 'หมายเหตุ : ...' — not data, excluded
+fiscal_year_be: 2567
+
+columns: {category_name: 0, headcount: 1, percent: 2}

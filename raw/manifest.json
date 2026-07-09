@@ -1,0 +1,25 @@
+{
+  "_comment": "Lineage record for files in raw/. Every file we ever download gets an entry here. Step 6 (automated detector) will append to this file automatically. For now these two entries are the manually-downloaded starting files.",
+  "files": [
+    {
+      "source": "CGD",
+      "source_name_th": "กรมบัญชีกลาง - ผลการเบิกจ่ายงบประมาณ",
+      "source_url": "https://www.cgd.go.th/cs/internet/internet/%E0%B8%82%E0%B9%88%E0%B8%B2%E0%B8%A7%E0%B8%AA%E0%B8%96%E0%B8%B4%E0%B8%95%E0%B8%B4.html",
+      "local_path": "raw/cgd/2026_07_03.xlsx",
+      "report_date": "2026-07-03",
+      "sha256": "309ad096e8e1372968346f994d2912faa5e89e96a3d389552ea9f9e3b2c58e95",
+      "downloaded_at": "2026-07-09T00:00:00+07:00",
+      "downloaded_by": "manual"
+    },
+    {
+      "source": "OCSC",
+      "source_name_th": "สำนักงาน ก.พ. - รายงานกำลังคนภาครัฐ",
+      "source_url": "https://www.ocsc.go.th/strategy-policy-work-plan/reports-statistics/government-workforce-statistics-report/2021-present-workforce-statistics/",
+      "local_path": "raw/ocsc/thaigovmanpower2567_4.xlsx",
+      "fiscal_year_be": 2567,
+      "sha256": "fcb9ee5644ee235031a0e363e42dc8a207b72248e8d8ac770e6b4de9afad7f9b",
+      "downloaded_at": "2026-07-09T00:00:00+07:00",
+      "downloaded_by": "manual"
+    }
+  ]
+}

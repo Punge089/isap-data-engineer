@@ -1,0 +1,23 @@
+# CGD — ผลการเบิกจ่ายงบประมาณ, sheet '2.กระทรวง'
+# Row/column boundaries below are exactly what Step 1 EDA verified against
+# the real file (reports/eda_cgd.txt) and were re-confirmed directly
+# against raw/cgd/2026_07_03.xlsx while building this config. Indices are
+# 0-based, matching openpyxl's ws.iter_rows(values_only=True) order — the
+# same convention src/eda_cgd.py used, so these numbers line up with that
+# report's row/index annotations.
+
+sheet_name: "2.กระทรวง"
+header_rows: [3, 4]      # row 3 = grouped header (merged), row 4 = sub-column names. Not data.
+data_row_start: 5
+data_row_end: 28         # inclusive — 24 ministry rows
+total_row: 29             # 'รวม' row: label sits in col 0 (not col 1) and ministry_code is a
+                           # stray ' ' — excluded from staging output, not read as a ministry.
+ministry_code_col: 21
+unit: "ล้านบาท"          # stated once in free text (row 2), not parseable from headers
+
+columns:
+  seq_no: 0
+  ministry_name: 1
+  recurring: {budget_after_transfer: 3,  allocated: 4,  spending_plan: 5,  po_reserved: 6,  disbursed: 7}
+  capital:   {budget_after_transfer: 9,  allocated: 10, spending_plan: 11, po_reserved: 12, disbursed: 13}
+  total:     {budget_after_transfer: 15, allocated: 16, spending_plan: 17, po_reserved: 18, disbursed: 19}

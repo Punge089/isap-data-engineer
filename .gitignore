@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+
+# Virtual environment
+.venv/
+venv/
+
+# Generated warehouse file (rebuilt by running the pipeline — not source, don't commit)
+warehouse/*.duckdb
+warehouse/*.duckdb.wal
+
+# Generated staging output (rebuilt from raw/ — not source, don't commit)
+staging/*.parquet
+staging/*.csv
+!staging/.gitkeep
+
+# OS junk
+.DS_Store
+
+# Editor
+.vscode/
+.idea/

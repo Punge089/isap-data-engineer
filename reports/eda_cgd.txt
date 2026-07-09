@@ -1,0 +1,74 @@
+
+======================================================================
+1. SHEET INVENTORY (all 15 sheets in the CGD file)
+======================================================================
+ - 1.สรุปภาพรวม
+ - 2.กระทรวง
+ - 3.หน่วยงาน
+ - 4.หน่วยงาน(ใช้จ่าย)
+ - 5.อบจ.
+ - 6.อบจ.(ใช้จ่าย)
+ - 7.เทศบาล
+ - 8.เทศบาล(ใช้จ่าย)
+ - 9.ลงทุน 1,000 ล้าน
+ - 10.รัฐวิสาหกิจ
+ - 11.จังหวัดได้รับจัดสรร
+ - 12.จังหวัดได้รับจัดสรร(ใช้จ่าย)
+ - 13.ส่วนกลางจัดสรรให้จังหวัด
+ - 14.ส่วนกลางจัดสรรให้จังหวัด(ใช้
+ - 15.กองทุนฯ
+
+======================================================================
+2. DEEP DIVE: "2.กระทรวง"
+======================================================================
+Total rows in sheet (incl. title/header/footer): 37
+
+-- Rows 0-4 (title block + 2-row grouped header) --
+0 ['รายงานผลการเบิกจ่ายเงินงบประมาณประจำปี พ.ศ. 2569 จำแนกตามกระทรวง เรียงลำดับผลการเบิกจ่ายจากน้อยไปมาก']
+1 ['ตั้งแต่ต้นปีงบประมาณ จนถึงวันที่ 3 กรกฎาคม 2569']
+2 ['หน่วย: ล้านบาท']
+3 ['ลำดับ\nที่', 'กระทรวง', None, 'รายจ่ายประจำ', None, None, None, None, None, 'รายจ่ายลงทุน', None, None, None, None, None, 'รวม', None, None, None, None, None, 'รหัสกระทรวง']
+4 [None, None, None, 'วงเงิน\nงบประมาณ\nหลังโอน\nเปลี่ยนแปลง', 'จัดสรร', 'แผนการ\nใช้จ่าย', 'PO+สำรอง\nเงินมีหนี้', 'เบิกจ่าย', 'ร้อยละ\nเบิกจ่าย\nต่องบ\nประมาณ\nหลังโอน\nเปลี่ยนแปลง', 'วงเงิน\nงบประมาณ\nหลังโอน\nเปลี่ยนแปลง', 'จัดสรร', 'แผนการ\nใช้จ่าย', 'PO+สำรอง\nเงินมีหนี้', 'เบิกจ่าย', 'ร้อยละ\nเบิกจ่าย\nต่องบ\nประมาณ\nหลังโอน\nเปลี่ยนแปลง', 'วงเงิน\nงบประมาณ\nหลังโอน\nเปลี่ยนแปลง', 'จัดสรร', 'แผนการ\nใช้จ่าย', 'PO+สำรอง\nเงินมีหนี้', 'เบิกจ่าย', 'ร้อยละ\nเบิกจ่าย\nต่องบ\nประมาณ\nหลังโอน\nเปลี่ยนแปลง']
+
+-- Data rows: rows[5:29] = 24 ministries --
+First ministry row: [1, 'กระทรวงคมนาคม', None, 12479.19303697, 12473.29983697, 0, 389.12662731, 9253.39711287, 74.15060481440203, 187476.73046303, 185040.12706303, 0, 62052.16428664, 97536.98023298, 52.026179458156314, 199955.9235, 197513.4269, 0, 62441.29091395, 106790.37734585, 53.40695863198572, '08']
+Last ministry row:  [24, 'หน่วยงานของศาล', None, 25047.8913, 25047.8913, 0, 0, 25010.6694, 99.85139707149719, 3142.7785, 3142.7785, 0, 0, 3142.7785, 100, 28190.6698, 28190.6698, 0, 0, 28153.4479, 99.86796376154213, '28']
+
+-- Total row: rows[29] --
+('รวม', None, None, 1738211.36895556, 1737519.63765556, 0, 13249.24843399, 1428827.77420152, 82.20103721103035, 614442.65924444, 603368.00454444, 0, 178970.3685688, 319912.23971383, 52.06543440639613, 2352654.0282, 2340887.6422, 0, 192219.61700279, 1748740.01391535, 74.33052174072952, ' ')
+
+-- Check: live Excel formulas in this sheet? --
+formula cells: 0 / 558 non-empty cells
+
+-- Check: ministry_code column (index 21) among the 24 data rows --
+null codes: 0, duplicate codes: 0
+total row's code value: ' '  <- NOT a real ministry code
+
+-- Check: does the total row line up with the same columns as data rows? --
+  ministry row example -> index0=1 (seq #), index1='กระทรวงคมนาคม' (name)
+  total row            -> index0='รวม' (label!), index1=None
+  => the label shifts from column 1 to column 0 on the total row.
+     A parser that assumes "column 1 = ministry name" for every row
+     will silently read the total row as a ministry with name=None.
+
+-- Check: แผนการใช้จ่าย (spending plan) columns --
+  รายจ่ายประจำ.แผนการใช้จ่าย == 0 for 24/24 ministries
+  รายจ่ายลงทุน.แผนการใช้จ่าย  == 0 for 24/24 ministries
+
+-- Check: negative values in measure columns? -- found: 0
+
+======================================================================
+3. PROBLEMS FOUND (answers requirement 2)
+======================================================================
+1. Title (3 rows) + 2-row grouped header (row 3 = group name repeated across 6 sub-columns via merged cells, row 4 = sub-column names) sit above the data. A naive pandas.read_excel(header=0) would read the title as column names.
+
+2. The grand-total row ('รวม') does NOT follow the same column layout as data rows: its label sits in column 0 instead of column 1, and its ministry_code cell contains a single space character (' '), not a real code and not None. A cleaner must detect and exclude this row by pattern (e.g. 'code is not a 2-digit numeric string'), not just by dropna().
+
+3. Footnote / source-note text (6 rows) sits below the total row, mixed into the same sheet, with no clear delimiter besides a blank row.
+
+4. The 'แผนการใช้จ่าย' (spending-plan) columns are 0 for ALL 24 ministries in both รายจ่ายประจำ and รายจ่ายลงทุน. This is a 100% zero-rate on a numeric column, which is a red flag: it's probably a field this particular report never populates (rather than the true value being coincidentally $0 for every ministry). We'll carry it through as-is but document it, not delete it.
+
+5. Values are stored as plain floats/ints, not formulas, in THIS sheet — unlike sheet '1.สรุปภาพรวม' in the same workbook, which does use live '=F6*100/B6'-style formulas. This is sheet-specific, so any generic 'formula = bad' rule must be checked per sheet, not assumed for the whole workbook.
+
+6. Unit is ล้านบาท (million THB) and is stated only once, in a free-text row (row 2), not in a column header — must be hardcoded into the warehouse config since it can't be parsed reliably from the sheet itself.
+
