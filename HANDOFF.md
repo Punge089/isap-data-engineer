@@ -184,6 +184,27 @@ instead of silently) before deciding this needs a workaround (e.g. a
 self-hosted runner, or a proxy — both add real complexity, not to be
 reached for until the block is confirmed consistent).
 
+## Open item: extract→clean→load against a genuinely new CGD file is still fixture-tested only
+
+Checked for a real new CGD file twice, a week apart — **2026-07-09** and
+**2026-07-10** — using both `detect.py` and `download.py` run locally
+(this machine, not the GitHub Actions runner, so the IP-block issue above
+doesn't apply here). Both times, both scripts agreed: the latest report on
+the live site is still **2026-07-03**, the same date already in
+`raw/manifest.json`. Nothing was forced or faked to manufacture a test.
+
+**This is a timing limitation, not a code gap.** The "new file found →
+download → extract → clean → load" path has real, passing test coverage
+(`tests/test_download.py`'s fixture-based flow, `tests/test_extract.py`'s
+real committed file, etc.), but has never yet run end-to-end against
+*actual new data* the way it will the day CGD actually publishes a report
+newer than 2026-07-03. Re-check periodically (`python src/detect.py` costs
+nothing and doesn't hit the site hard). **The moment a real new file
+appears, note the exact date here and run the full chain for real** —
+that will be the first genuine, non-fixture proof of this path, and is
+worth calling out explicitly in the interview/demo as the one piece that
+was validated as soon as real data allowed it, not before.
+
 ## Environment notes
 
 - Repo layout, `.gitignore` policy (raw/ tracked, staging/ and warehouse/*.duckdb
