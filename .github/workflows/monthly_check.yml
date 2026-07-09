@@ -24,6 +24,14 @@
 #     data update (run `python src/load.py` to refresh it). This closes
 #     the open question flagged since Step 0/6: option (a) chosen
 #     (raw/manifest only), not (b) (also committing the rebuilt warehouse).
+#   - "Flag CGD check failures..." step below exists because a live test
+#     run (2026-07-09, see HANDOFF.md's "Open risk: CGD returned HTTP 403")
+#     showed that a failed fetch and a genuine "nothing new" month both
+#     leave the two conditional steps skipped -- looking identical (green
+#     checkmark) in the Actions list. This step makes the job fail loudly
+#     (exit 1 + an ::error:: annotation) when the check itself didn't
+#     complete, so a persistent IP block becomes visible over time instead
+#     of silently looking like 11 normal no-op months in a row.
 
 name: Monthly CGD data check
 
@@ -65,6 +73,16 @@ jobs:
             echo "$OUTPUT"
             echo "DOWNLOAD_EOF"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Flag CGD check failures distinctly from "nothing new" months
+        run: |
+          RESULT="${{ steps.download.outputs.result }}"
+          CGD_LINE=$(echo "$RESULT" | grep '^CGD:' | head -1)
+          echo "CGD line: $CGD_LINE"
+          if echo "$CGD_LINE" | grep -qE 'could not fetch|no report rows found'; then
+            echo "::error::CGD check did NOT complete this run (this is a FAILED check, not a normal 'nothing new' month): $CGD_LINE -- if this repeats across several runs, CGD may be blocking this runner's IP range (see HANDOFF.md's 'Open risk: CGD returned HTTP 403...' note)."
+            exit 1
+          fi
 
       - name: Run extract -> clean -> load (only if a new CGD file was actually downloaded)
         if: contains(steps.download.outputs.result, 'downloaded new file')
