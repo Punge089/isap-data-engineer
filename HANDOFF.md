@@ -184,6 +184,68 @@ instead of silently) before deciding this needs a workaround (e.g. a
 self-hosted runner, or a proxy — both add real complexity, not to be
 reached for until the block is confirmed consistent).
 
+## Second automation path: Windows Task Scheduler — CLOSED, confirmed working 2026-07-11
+
+GitHub Actions' CGD half is blocked by CGD's IP filtering (see the "Open
+risk" row above) — that block is not fixed by anything below, it's still
+open. What's added here is a **second, independent trigger path** for the
+same `python src/detect.py` check, running from this local machine instead
+of a cloud runner, so the monthly check has a way to actually fire even
+while the IP-block question is unresolved.
+
+**What was built:** a scheduled task named `ISAP Monthly CGD Check`
+(Task Scheduler, monthly, day 1 of every month at 08:00), running
+`scripts\run_monthly_cgd_check.bat`, which `cd`s to the repo root and runs
+`.venv\Scripts\python.exe src\detect.py >> logs\detect_log.txt 2>&1`. The
+batch wrapper exists because Task Scheduler actions don't support shell
+redirection (`>>`) directly — the actual redirect only works inside a
+real `cmd.exe` script.
+
+**Non-obvious gotcha hit and fixed for real:** `schtasks /create /tr
+"<quoted path>"` silently mis-parses when the path contains spaces —
+which this repo's path always will (`...\ISAP Project\...`). It doesn't
+error at creation time; it truncates the stored action at the first space
+(`Command: C:\Users\MSII\Desktop\ISAP`, `Arguments: Project\...`), which
+then fails at run time with `FILE_NOT_FOUND` (result code `-2147024894`).
+Confirmed via `Get-ScheduledTask ... | select Actions` directly against
+the CIM object, not just schtasks' own text output (which can *display*
+the broken action in a way that looks plausible). Tried several quoting
+strategies (`--%` stop-parsing token, array-splatted args, the
+`ScheduledTasks` PowerShell module's own `Register-ScheduledTask` +
+CIM `MSFT_TaskMonthlyTrigger` trigger object) — the one that actually
+worked cleanly was sidestepping the quoting problem entirely: register
+the task against the batch file's 8.3 short path
+(`C:\Users\MSII\Desktop\ISAPPR~1\ISAP-D~1\ISAP-D~1\scripts\RUN_MO~1.BAT`,
+obtained via `Scripting.FileSystemObject`), which has no spaces to
+mis-parse in the first place. **Known limitation this creates:** the
+short path is specific to this exact machine and this exact folder
+location, so moving the repo to a different folder or a different machine
+would require re-registering the task (rerunning the registration step,
+not a code change) — not a blocker, just don't expect the existing task
+to follow the repo automatically.
+
+**Live-verified, not just configured:** triggered manually via `schtasks
+/run /tn "ISAP Monthly CGD Check"` and polled `Last Result` until it
+returned `0` (success). The real `logs/detect_log.txt` gained two new
+lines from that specific run (verified by line count before/after, not
+inferred): `CGD: nothing new (latest on site is 2026-07-03, already have
+it)` and the same real OCSC 403/Cloudflare message `detect.py` produces
+everywhere else in this project. An earlier attempt (before switching to
+the short-path fix) genuinely failed with `STATUS_CONTROL_C_EXIT`
+(`-1073741510`) and appended nothing to the log — recorded here rather
+than hidden, since it's a real data point about how fragile Task
+Scheduler's action string can be, even though the final configuration
+works.
+
+**What this does and does not prove:** proves a second, real, working
+trigger path exists for the monthly CGD check on this machine, independent
+of GitHub's runner IPs. Does **not** fix the GitHub Actions 403 (that's
+still open, see above), does not make OCSC automatable (still hits the
+same Cloudflare/JS-widget wall documented elsewhere in this file), and
+only runs while this specific machine is on and the task's "run only when
+logged on" condition is satisfiable — it's a mitigation for the IP-block
+risk, not a replacement for eventually resolving it.
+
 ## Open item: extract→clean→load against a genuinely new CGD file is still fixture-tested only
 
 Checked for a real new CGD file twice, a week apart — **2026-07-09** and

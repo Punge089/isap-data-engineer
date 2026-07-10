@@ -17,6 +17,10 @@ staging/*.parquet
 staging/*.csv
 !staging/.gitkeep
 
+# Runtime log output (grows every month via the Task Scheduler job — same
+# "generated, not source" pattern as warehouse.duckdb)
+logs/
+
 # OS junk
 .DS_Store
 
