@@ -143,3 +143,68 @@ unverified, not swept under the rug.
 
 *(For the full version of any of these, `HANDOFF.md` has the complete
 record — findings, fixes, and what's still open.)*
+
+---
+
+## Optional visual demo (if time and setup allow)
+
+This is **DuckDB's own official UI extension** (ships from DuckDB Labs
+as part of the DuckDB CLI, not a custom tool built for this project). It
+opens a browser-based catalog browser and SQL notebook against the real
+warehouse file. Use it **after** Steps 1-5 above, as a visual bonus —
+the terminal demo is the primary, already-fully-tested proof and stands
+on its own without this.
+
+**Prerequisites (one-time, already done on this machine):**
+- DuckDB CLI installed via `winget install --id DuckDB.cli --source winget`
+  (separate binary from the `duckdb` Python package in `requirements.txt`).
+- Confirm nothing else has `warehouse/warehouse.duckdb` open — DuckDB is
+  single-writer, so a second connection (VS Code extension, a running
+  `python demo/run_demo.py`, another `duckdb` CLI instance) will make the
+  UI fail to start with an "already open" IO error.
+
+**Run:**
+```
+duckdb warehouse/warehouse.duckdb -ui
+```
+
+**What this proved, live, on this machine (2026-07-11):**
+- Opens `http://localhost:4213/` automatically in the default browser
+  (Brave, in this test) and the server answers `HTTP 200`.
+- Before launch, `SHOW TABLES;` against the same file confirmed all 7
+  real tables: `dim_date`, `dim_expense_type`, `dim_ministry`,
+  `dim_personnel_category`, `dim_source`, `fact_disbursement`,
+  `fact_workforce_summary` — the same catalog the UI's left-hand
+  browser reads from, since it's the identical file.
+- Once the UI is running, the file is held open single-writer by that
+  process (verified: a second CLI connection to the same path fails
+  with "file is already open in ... duckdb.exe (PID ...)"). That lock
+  is itself proof the UI is bound to the real warehouse file, not an
+  empty or mock one.
+
+**In the notebook cell, try the CGD `is_leaf` double-count query:**
+```sql
+SELECT SUM(disbursed) AS naive_sum FROM fact_disbursement;
+
+SELECT SUM(disbursed) AS correct_sum
+FROM fact_disbursement f
+JOIN dim_expense_type e ON e.expense_type_key = f.expense_type_key
+WHERE e.is_leaf = true;
+```
+
+**Expected numbers (captured from `python demo/run_demo.py` on
+2026-07-11, terminal-verified, use these to confirm the UI matches):**
+```
+GRAND TOTAL -- naive (no filter):        3,497,480.03 ล้านบาท
+GRAND TOTAL -- correct (is_leaf = true):  1,748,740.01 ล้านบาท
+naive / correct ratio:                    2.0000
+```
+If the UI's notebook returns these same two numbers, that's the visual
+confirmation this bonus step is for.
+
+**Honest caveat:** the install, launch, port binding, HTTP response, and
+file-lock proof above were verified directly on this machine. Actually
+clicking through the catalog browser and typing the query into the
+notebook cell requires a human at the keyboard (or a browser-automation
+tool this assistant didn't have available) — do that part live, and
+don't present it as pre-verified beyond what's listed above.
