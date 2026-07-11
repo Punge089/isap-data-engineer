@@ -1,15 +1,5 @@
-"""Step 3: extractor.
-
-Reads the two source Excel files using per-source config (config/cgd.yaml,
-config/ocsc.yaml — sheet name, row boundaries, column indices) and writes
-flat CSVs to staging/. This step only gets the right rows/columns out; it
-does not clean them (no .strip(), no percent recompute, no total-row math,
-no is_leaf). That boundary is deliberate — extraction and cleaning are
-scored separately (PROJECT_SPEC.md §1), and Step 4 owns cleaning.
-
-Paths are resolved relative to this file, not the working directory (see
-HANDOFF.md's note on the repo-root path bug from Step 1).
-"""
+"""Step 3: extractor. Reads the source Excel files via per-source config
+and writes flat CSVs to staging/ -- no cleaning, that's Step 4's job."""
 
 from pathlib import Path
 import csv
@@ -31,12 +21,8 @@ def load_config(source: str) -> dict:
 
 
 def find_raw_file(source: str) -> Path:
-    """Pick the .xlsx file to extract from raw/<source>/.
-
-    Not hardcoded to today's filename: Step 6's detector will drop new
-    files into this same folder under their own report-date name, and this
-    extractor should pick those up without a code change.
-    """
+    """Pick the .xlsx to extract from raw/<source>/ -- not hardcoded to
+    today's filename, so new files Step 6 drops in need no code change."""
     source_dir = RAW_DIR / source
     files = sorted(source_dir.glob("*.xlsx"))
     if not files:
@@ -115,9 +101,7 @@ def write_csv(records: list[dict], out_path: Path) -> None:
 def run_cgd() -> Path:
     config = load_config("cgd")
     raw_file = find_raw_file("cgd")
-    # Step 7 (ข้อ 3c): a newly downloaded file's structure is never assumed
-    # to match config/cgd.yaml — this raises loudly (StructureValidationError)
-    # if it doesn't, instead of silently parsing wrong columns.
+    # Fail loud if the file's structure doesn't match config/cgd.yaml.
     validate_cgd_structure(raw_file, config)
     records = extract_cgd(raw_file, config)
     out_path = STAGING_DIR / "cgd_disbursement.csv"

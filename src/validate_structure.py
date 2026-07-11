@@ -1,13 +1,6 @@
-"""Step 7: schema/structure validation (ข้อ 3c).
-
-Runs BEFORE extract.py trusts a file's row/column layout against
-config/cgd.yaml's assumptions. This is what makes ข้อ 3c's promise ("new
-file, same structure -> loads without breaking") a real guarantee instead
-of a hope: if a downloaded file's actual layout doesn't match what the
-config expects — wrong sheet, shifted header, moved total row — this
-raises loudly instead of letting extract.py silently read wrong columns
-into the pipeline.
-"""
+"""Step 7: schema/structure validation (ข้อ 3c). Runs before extract.py
+trusts a file's layout -- raises loudly on any mismatch instead of
+silently reading wrong columns."""
 
 from __future__ import annotations
 
@@ -17,16 +10,12 @@ from openpyxl import load_workbook
 
 
 class StructureValidationError(Exception):
-    """Raised when a workbook's actual layout doesn't match what a config
-    file assumes. Meant to stop the pipeline (fail loud), not be caught
-    and downgraded to a warning."""
+    """Raised when a workbook's layout doesn't match its config -- meant
+    to stop the pipeline, not be downgraded to a warning."""
 
 
 def validate_cgd_structure(file_path: Path, config: dict) -> None:
-    """Raise StructureValidationError if file_path's sheet doesn't match
-    config's assumptions. Returns None (no exception) if everything lines
-    up.
-    """
+    """Raise StructureValidationError if file_path's sheet doesn't match config."""
     sheet_name = config["sheet_name"]
 
     wb = load_workbook(file_path, read_only=True, data_only=True)

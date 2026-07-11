@@ -1,18 +1,6 @@
-"""Step 7: downloader (ข้อ 3c).
-
-Given Step 6's detector finding, downloads a new CGD report and appends a
-new lineage entry to raw/manifest.json. This never overwrites or replaces
-existing entries — only appends. Kept as a separate step from detect.py
-the same way extraction and cleaning were kept separate: detect.py only
-ever reports, this file is the only place in the automated pipeline that
-writes to raw/ or raw/manifest.json.
-
-OCSC has no automated download path (see detect.py's docstring and
-HANDOFF.md's OCSC findings — sometimes Cloudflare-challenged, and even
-when not, the report list is JS-rendered, not in the static HTML).
-download_ocsc() refuses immediately and says so, rather than silently
-doing nothing.
-"""
+"""Step 7: downloader (ข้อ 3c). Downloads a new CGD report and appends a
+lineage entry to raw/manifest.json (append-only). Only file that writes
+to raw/. OCSC has no automated path -- download_ocsc() just refuses."""
 
 from __future__ import annotations
 
@@ -39,9 +27,8 @@ OPEN_DOWNLOAD_RE = re.compile(r"openDownload\('([^']*)','([^']*)','([^']*)'\)")
 
 
 def extract_download_url(href: str) -> str | None:
-    """Pull the real download URL out of a javascript:openDownload(...)
-    href. Returns None if the href isn't in the expected shape -- a
-    structural change worth surfacing, not silently ignoring.
+    """Pull the real URL out of a javascript:openDownload(...) href.
+    Returns None if the href doesn't match the expected shape.
     """
     match = OPEN_DOWNLOAD_RE.search(href)
     if match is None:
@@ -56,11 +43,8 @@ def hash_exists_in_manifest(sha256_hex: str, manifest: dict) -> bool:
 def build_manifest_entry(
     report: detect.CgdReport, file_bytes: bytes, template_entry: dict
 ) -> dict:
-    """Build a new raw/manifest.json entry for a freshly downloaded CGD
-    file, matching the exact shape of the existing entries. template_entry
-    supplies source_name_th/source_url so those don't get hardcoded a
-    second time anywhere in the codebase.
-    """
+    """Build a new manifest entry; template_entry supplies source_name_th/
+    source_url so those aren't hardcoded again."""
     filename = report.report_date.strftime("%Y_%m_%d") + ".xlsx"
     return {
         "source": "CGD",
@@ -77,11 +61,7 @@ def build_manifest_entry(
 def process_download(
     report: detect.CgdReport, file_bytes: bytes, manifest: dict, template_entry: dict
 ) -> dict | None:
-    """Pure decision logic, no I/O: given already-fetched bytes and the
-    current manifest, decide whether this is a genuinely new file (return
-    the new entry to append) or a duplicate by content (return None,
-    meaning skip -- don't save, don't append).
-    """
+    """Pure, no I/O: return the entry to append, or None if a hash duplicate."""
     sha256_hex = hashlib.sha256(file_bytes).hexdigest()
     if hash_exists_in_manifest(sha256_hex, manifest):
         return None

@@ -1,8 +1,4 @@
-"""Step 2: create warehouse/warehouse.duckdb from sql/schema.sql.
-
-Paths are resolved relative to this file, not the current working
-directory, so it works whether you run it from the repo root or not.
-"""
+"""Step 2: create warehouse/warehouse.duckdb from sql/schema.sql."""
 
 from pathlib import Path
 
@@ -14,10 +10,7 @@ DB_PATH = REPO_ROOT / "warehouse" / "warehouse.duckdb"
 
 
 def ensure_schema(con: duckdb.DuckDBPyConnection) -> None:
-    """Apply sql/schema.sql against an already-open connection. Every
-    statement in that file is IF NOT EXISTS, so this is safe to call on
-    every run — load.py relies on this to guarantee the tables exist
-    without requiring init_db.py to have been run first."""
+    """Apply sql/schema.sql (all IF NOT EXISTS) -- safe on every run."""
     con.execute(SCHEMA_PATH.read_text(encoding="utf-8"))
 
 

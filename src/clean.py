@@ -1,15 +1,5 @@
-"""Step 4: cleaner/transformer.
-
-Reads staging/cgd_disbursement.csv and staging/ocsc_workforce.csv — the
-untouched output of Step 3's extract.py — and produces cleaned,
-warehouse-shaped versions. This is where values finally get fixed: strip
-whitespace, recompute percentages ourselves, unpivot CGD into long format,
-compute is_leaf. Step 3 deliberately did none of this (see extract.py's
-docstring); this file is where that boundary ends.
-
-Paths are resolved relative to this file, not the working directory (same
-convention as init_db.py / extract.py).
-"""
+"""Step 4: cleaner/transformer. Strips/recomputes/unpivots Step 3's raw
+staging CSVs into warehouse-shaped rows."""
 
 from pathlib import Path
 import csv
@@ -18,11 +8,8 @@ from extract import STAGING_DIR, write_csv
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# Maps the wide staging column prefix -> the expense_type_name that will
-# become a dim_expense_type row. 'รวม' is the additive rollup of the other
-# two (budget_after_transfer_total = recurring + capital), not a 3rd
-# independent value — same overcount shape as the OCSC hierarchy, which is
-# why it's flagged is_leaf=False here exactly like a non-leaf category.
+# Wide staging column prefix -> expense_type_name. 'รวม' is the rollup of
+# the other two, not a 3rd independent value -- flagged is_leaf=False.
 EXPENSE_TYPE_GROUPS = {
     "recurring": "รายจ่ายประจำ",
     "capital": "รายจ่ายลงทุน",
@@ -50,11 +37,6 @@ def clean_cgd(raw_rows: list[dict]) -> list[dict]:
             disbursed = values["disbursed"]
 
             if budget_after_transfer == 0:
-                # Not present in today's data (checked: no ministry has
-                # budget_after_transfer == 0 in staging/cgd_disbursement.csv),
-                # but nothing upstream guarantees that stays true. Store NULL
-                # rather than raising ZeroDivisionError or writing inf/NaN —
-                # an analyst sees a missing percentage, not a nonsensical one.
                 disbursed_pct = None
             else:
                 disbursed_pct = disbursed / budget_after_transfer * 100
@@ -78,16 +60,8 @@ def clean_cgd(raw_rows: list[dict]) -> list[dict]:
 
 
 def clean_ocsc(raw_rows: list[dict]) -> list[dict]:
-    """Strip text fields, compute is_leaf from hierarchy_level, and
-    recompute share_pct from raw headcounts instead of trusting the
-    Excel-reported percent column.
-
-    parent_category is kept as plain (stripped) text, NOT resolved to a
-    parent_category_key here: that requires dim_personnel_category rows to
-    already exist, and this script never touches the warehouse — it only
-    reads/writes CSVs. Resolving text -> key is Step 5's job, once the
-    loader has inserted dim_personnel_category and can look keys up.
-    """
+    """Strip text, compute is_leaf, recompute share_pct from raw headcounts.
+    parent_category stays plain text -- Step 5's loader resolves the key."""
     cleaned = []
     for row in raw_rows:
         hierarchy_level = int(row["hierarchy_level"])
@@ -105,9 +79,7 @@ def clean_ocsc(raw_rows: list[dict]) -> list[dict]:
     grand_total_headcount = next(r["headcount"] for r in cleaned if r["hierarchy_level"] == 0)
     for r in cleaned:
         if grand_total_headcount == 0:
-            # Same reasoning as disbursed_pct above: NULL, not a crash. Not
-            # reachable in today's data (grand total = 3,004,485) but the
-            # code shouldn't assume that stays true.
+            # Same as disbursed_pct: NULL, not a crash (not reachable today).
             r["share_pct"] = None
         else:
             r["share_pct"] = r["headcount"] / grand_total_headcount * 100

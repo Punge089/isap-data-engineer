@@ -1,37 +1,15 @@
 # Step 7 (cron wrapper): monthly automated check for a new CGD report.
+# Thin wrapper only -- all logic lives in src/*.py (see HANDOFF.md Step 7).
 #
-# This is intentionally a thin wrapper around scripts that are already
-# fully tested locally (src/detect.py, src/download.py, src/extract.py,
-# src/clean.py, src/load.py) -- no new Python logic lives here, only
-# wiring. See HANDOFF.md's Step 7 entries for how each script was tested
-# before this workflow existed.
-#
-# Design decisions made here (full record in HANDOFF.md):
-#
-#   - Push directly to main using the default GITHUB_TOKEN (contents:
-#     write), instead of opening a PR (e.g. via
-#     peter-evans/create-pull-request). Chosen because: (1) this workflow
-#     only ever commits DATA (raw/manifest.json + a new raw/cgd/*.xlsx),
-#     never code; (2) the commit step only runs after extract/clean/load
-#     succeed, and validate_structure.py already fails loud on any
-#     structural mismatch before that point -- so a broken/mismatched file
-#     can never reach the commit step; (3) it needs no extra PAT/secret
-#     setup, and is simpler to explain and to demo live (a PR would need a
-#     manual merge click mid-demo).
-#   - warehouse.duckdb is NOT rebuilt or committed by this workflow -- it
-#     stays a local build artifact exactly as README.md/.gitignore already
-#     describe it, whether built locally or after pulling a CI-produced
-#     data update (run `python src/load.py` to refresh it). This closes
-#     the open question flagged since Step 0/6: option (a) chosen
-#     (raw/manifest only), not (b) (also committing the rebuilt warehouse).
-#   - "Flag CGD check failures..." step below exists because a live test
-#     run (2026-07-09, see HANDOFF.md's "Open risk: CGD returned HTTP 403")
-#     showed that a failed fetch and a genuine "nothing new" month both
-#     leave the two conditional steps skipped -- looking identical (green
-#     checkmark) in the Actions list. This step makes the job fail loudly
-#     (exit 1 + an ::error:: annotation) when the check itself didn't
-#     complete, so a persistent IP block becomes visible over time instead
-#     of silently looking like 11 normal no-op months in a row.
+# Key decisions (full rationale in HANDOFF.md):
+# - Pushes straight to main, no PR: this workflow only ever commits data
+#   (manifest + raw xlsx), and validate_structure.py already blocks bad
+#   files before the commit step can run.
+# - warehouse.duckdb is NOT rebuilt/committed here -- stays a local
+#   artifact, run `python src/load.py` after pulling to refresh it.
+# - "Flag CGD check failures" (below) turns a failed fetch into a visible
+#   red X instead of looking like a normal "nothing new" month -- see
+#   HANDOFF.md's "CGD returned HTTP 403" note.
 
 name: Monthly CGD data check
 

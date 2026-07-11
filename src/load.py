@@ -1,19 +1,6 @@
-"""Step 5: loader.
-
-Reads Step 4's cleaned staging CSVs (staging/cgd_disbursement_clean.csv,
-staging/ocsc_workforce_clean.csv) and raw/manifest.json, and performs an
-idempotent load into warehouse/warehouse.duckdb's dim_*/fact_* tables
-(sql/schema.sql, Step 2).
-
-"Idempotent" here means every INSERT is `ON CONFLICT (natural key) DO
-NOTHING` — running this script twice against the same input must produce
-identical row counts in every table. That relies on every table already
-having a real UNIQUE/PRIMARY KEY constraint on its natural key; there is no
-"check row count before inserting" logic anywhere in this file.
-
-Paths are resolved relative to this file, same convention as every other
-src/ script in this project.
-"""
+"""Step 5: loader. Idempotent-loads Step 4's cleaned CSVs into
+warehouse.duckdb via `ON CONFLICT (natural key) DO NOTHING` -- running
+twice gives identical row counts."""
 
 from __future__ import annotations
 
@@ -49,15 +36,8 @@ def parse_float_or_none(value: str) -> float | None:
 
 
 def load_manifest() -> dict:
-    """{'CGD': latest CGD entry, 'OCSC': latest OCSC entry} -- the entry
-    with the latest report_date/fiscal_year_be per source, not just
-    "whichever happens to be last in the file". Manifest order is never
-    trusted, same discipline as detect.py's latest_cgd_date_from_manifest:
-    now that Step 7's downloader can genuinely append a second CGD entry,
-    a naive {entry["source"]: entry for entry in ...} dict comprehension
-    would silently keep whichever entry iterates last, not whichever is
-    actually newest.
-    """
+    """{'CGD': latest entry, 'OCSC': latest entry} by report_date/
+    fiscal_year_be -- never trusts manifest order."""
     manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
     cgd_entries = [e for e in manifest["files"] if e["source"] == "CGD"]
     ocsc_entries = [e for e in manifest["files"] if e["source"] == "OCSC"]
@@ -71,13 +51,8 @@ def load_manifest() -> dict:
 
 
 def thai_fiscal_year_be(report_date: date) -> int:
-    """Thai government fiscal year runs Oct 1 - Sep 30; Oct/Nov/Dec belong
-    to the *next* calendar year's fiscal year. Not stored anywhere
-    machine-readable for CGD (only the free-text report title has it, and
-    nothing in this pipeline parses that title) so it's derived here from
-    report_date instead of guessed. Verified against the one data point we
-    have: report_date 2026-07-03 -> FY2569, matching reports/eda_cgd.txt's
-    row 0 title text ('...ปีงบประมาณ พ.ศ. 2569')."""
+    """Thai FY runs Oct 1 - Sep 30 (Oct/Nov/Dec -> next year's FY).
+    Verified: 2026-07-03 -> FY2569, matching reports/eda_cgd.txt."""
     fiscal_year_ce = report_date.year + 1 if report_date.month >= 10 else report_date.year
     return fiscal_year_ce + 543
 
@@ -166,10 +141,7 @@ def load_cgd(con: duckdb.DuckDBPyConnection) -> None:
 
     rows = read_csv(STAGING_DIR / "cgd_disbursement_clean.csv")
 
-    # dim_expense_type.is_leaf comes straight from clean.py's own column —
-    # never re-derived independently here, so there is exactly one source
-    # of truth (Step 4's test_cgd_is_leaf_consistent_per_expense_type
-    # already guarantees every row for a given expense_type_name agrees).
+    # is_leaf comes straight from clean.py's column, not re-derived here.
     expense_types = {r["expense_type_name"]: parse_bool(r["is_leaf"]) for r in rows}
     for name, is_leaf in expense_types.items():
         con.execute(
@@ -233,10 +205,9 @@ def load_ocsc(con: duckdb.DuckDBPyConnection) -> None:
 
     rows = read_csv(STAGING_DIR / "ocsc_workforce_clean.csv")
 
-    # dim_personnel_category: insert every distinct (already-stripped by
-    # clean.py) category_name FIRST, THEN build the name -> key lookup,
-    # THEN resolve parent_category text -> parent_category_key using that
-    # lookup. Never resolve a key before the row that owns it exists.
+    # Insert every category_name first, then build name->key lookup,
+    # then resolve parent_category via that lookup -- never resolve a
+    # key before its row exists.
     for r in rows:
         con.execute(
             """
@@ -254,10 +225,8 @@ def load_ocsc(con: duckdb.DuckDBPyConnection) -> None:
 
     for r in rows:
         parent_text = r["parent_category"]
-        # Grand total's parent_category came out of clean.py as None, which
-        # write_csv/csv.DictWriter serialized as ''. Empty string here means
-        # "no parent" -> parent_category_key stays NULL, not resolved to
-        # some default.
+        # Grand total's parent_category is '' (None serialized by csv) ->
+        # parent_category_key stays NULL, not resolved to a default.
         parent_key = category_keys[parent_text] if parent_text else None
 
         con.execute(

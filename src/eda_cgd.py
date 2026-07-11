@@ -1,16 +1,6 @@
-"""
-EDA & Data Profiling — CGD budget disbursement file.
-
-Run: python3 src/eda_cgd.py
-
-Answers requirement 2 (EDA & Data Profiling) for the CGD source.
-Focuses the deep-dive on sheet '2.กระทรวง' — the sheet chosen in
-PROJECT_SPEC.md §3 as the core scope for fact_disbursement.
-
-Every "finding" printed below is checked programmatically against the
-real file, not asserted from memory — if the source file changes shape,
-this script's checks will surface it instead of silently agreeing.
-"""
+"""EDA & Data Profiling -- CGD budget disbursement file. Run:
+python3 src/eda_cgd.py. Deep-dives sheet '2.กระทรวง' (PROJECT_SPEC.md §3);
+every finding is checked programmatically against the real file."""
 
 from profiling_utils import load_sheet_rows, trim_trailing_none, count_formula_cells
 

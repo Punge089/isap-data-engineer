@@ -1,26 +1,13 @@
-"""
-Shared helper functions for EDA / data profiling scripts.
-
-Used by eda_cgd.py and eda_ocsc.py. Kept intentionally small: just the
-handful of primitives both scripts need when reading messy government
-report-style Excel files (title rows, multi-row headers, footnotes,
-possible live formulas).
-"""
+"""Shared helpers for eda_cgd.py / eda_ocsc.py -- primitives for reading
+messy report-style Excel files (title rows, headers, formulas)."""
 
 from openpyxl import load_workbook
 
 
 def load_sheet_rows(path, sheet_name, data_only=False):
-    """
-    Load one sheet as a list of row-tuples. No pandas, no header guessing —
-    we want to see the raw shape before deciding how to parse it.
-
-    data_only=False -> formula cells return the formula text, e.g. '=F6*100/B6'
-    data_only=True  -> formula cells return Excel's last CACHED numeric result
-
-    We use data_only=False specifically to DETECT which cells are formulas
-    (that's a data-quality issue worth flagging), not to read values.
-    """
+    """Load one sheet as row-tuples, no pandas/header guessing.
+    data_only=False returns formula text (e.g. '=F6*100/B6'); True returns
+    Excel's cached result."""
     wb = load_workbook(path, read_only=True, data_only=data_only)
     ws = wb[sheet_name]
     rows = list(ws.iter_rows(values_only=True))
@@ -37,10 +24,8 @@ def trim_trailing_none(row):
 
 
 def count_formula_cells(path, sheet_name):
-    """
-    Count how many non-empty cells in a sheet are live Excel formulas
-    (text starting with '='). Returns (formula_count, non_empty_count).
-    """
+    """Count non-empty cells that are live formulas. Returns
+    (formula_count, non_empty_count)."""
     rows = load_sheet_rows(path, sheet_name, data_only=False)
     formula_count = 0
     non_empty = 0
@@ -55,12 +40,8 @@ def count_formula_cells(path, sheet_name):
 
 
 def classify_sheet_density(path, sheet_name, sample_rows=500):
-    """
-    Quick classification of one sheet: how many rows actually contain data
-    vs. being empty (chart-only sheet) or just a title line.
-
-    Returns a dict: {sheet, rows_with_data, first_cell_text}
-    """
+    """How many rows have real data vs. empty/chart-only. Returns
+    {sheet, rows_with_data, first_cell_text}."""
     wb = load_workbook(path, read_only=True)
     ws = wb[sheet_name]
     rows_with_data = 0

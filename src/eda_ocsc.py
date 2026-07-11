@@ -1,19 +1,8 @@
-"""
-EDA & Data Profiling — OCSC government workforce yearbook.
-
-Run: python3 src/eda_ocsc.py
-
-Answers requirement 2 (EDA & Data Profiling) for the OCSC source.
-Two parts:
-  1. Inventory all ~68 sheets and classify which ones actually contain
-     tabular data vs. chart-only / cover pages. This is the evidence
-     behind the scope decision in PROJECT_SPEC.md §3 (why we don't
-     ingest all 68 sheets).
-  2. Deep dive on sheet '12' — the sheet chosen for fact_workforce_summary.
-     Includes a programmatic check for a hierarchy problem found during
-     manual inspection: the "flat-looking" 3-column table is actually a
-     2-level hierarchy of totals, which changes how it must be loaded.
-"""
+"""EDA & Data Profiling -- OCSC workforce yearbook. Run:
+python3 src/eda_ocsc.py. (1) Classifies all ~68 sheets, tabular vs.
+chart-only -- evidence for the PROJECT_SPEC.md §3 scope decision. (2)
+Deep-dives sheet '12', checking the flat-looking table is actually a
+2-level hierarchy of totals."""
 
 from openpyxl import load_workbook
 from profiling_utils import classify_sheet_density, trim_trailing_none

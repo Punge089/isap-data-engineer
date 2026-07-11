@@ -1,40 +1,7 @@
-"""Step 6: latest-file detector (ข้อ 3b).
-
-Checks whether a newer report has been published on each source's listing
-page than what's already recorded in raw/manifest.json. This step only
-DETECTS and REPORTS ("new file found: <date>" / "nothing new") — it never
-downloads anything. Downloading is Step 7's job (ข้อ 3c), kept separate the
-same way extraction and cleaning were.
-
-Known, permanent limitations found while building this (not TODOs):
-
-- OCSC's listing page has given TWO DIFFERENT real responses on two
-  separate live requests to the exact same URL, and this is not treated as
-  one superseding the other — see HANDOFF.md's "Open risk: OCSC detection
-  may be non-deterministic" for the full record. Both are handled:
-  (1) sometimes a Cloudflare managed JS challenge ("Just a moment...",
-  HTTP 403) — see tests/fixtures/ocsc_cloudflare_challenge.html for a real
-  saved copy; (2) sometimes a clean 200 with the real WordPress/Elementor
-  page — see tests/fixtures/ocsc_real_page_no_file_links.html — but even
-  then the report list isn't in that HTML. It's a "custom-field-filter-form"
-  widget backed by a WordPress admin-ajax.php call that only populates
-  results after JavaScript runs (confirmed: zero .xlsx/.xls/.pdf/.zip links
-  anywhere in that real, successfully-fetched 369KB page). So neither
-  outcome is scrapable with requests/BeautifulSoup: one is blocked before
-  reaching the content, the other reaches content that still requires
-  JavaScript to populate, which is out of scope for this project
-  (PROJECT_SPEC.md §11 anticipated the general risk; these are the two
-  confirmed concrete shapes it took). Since OCSC only publishes once a
-  year, the honest fallback is a manual check either way — see
-  check_ocsc()'s returned messages for both cases.
-
-- CGD's listing page DOES work with plain requests + BeautifulSoup. Each
-  report row has a dedicated 'วัน/เดือน/ปี' column in 'DD/MM/YYYY' format
-  (Buddhist Era year) — that column is used as the date source, not the
-  Thai free-text title (title parsing would need a 12-entry Thai month
-  name table and two different phrasings; the date column needs none of
-  that and is far less likely to break).
-"""
+"""Step 6: latest-file detector (ข้อ 3b). Reports "new file" / "nothing
+new" per source, never downloads (Step 7's job). OCSC isn't scrapable
+(Cloudflare + JS-rendered widget, see HANDOFF.md) -- manual fallback.
+CGD works fine via requests + BeautifulSoup."""
 
 from __future__ import annotations
 
@@ -60,14 +27,8 @@ CGD_REPORT_TITLE_PREFIX = "ผลการเบิกจ่ายเงิน"
 
 
 class CgdReport(NamedTuple):
-    """One report row from CGD's listing page.
-
-    download_href is the raw <a href> string — for CGD that's a
-    javascript:openDownload(...) call, not a plain URL (see Step 6 finding
-    in this module's docstring). src/download.py is what actually extracts
-    the real download URL out of it; this module just carries it through
-    unparsed, since detect.py's own job is reporting, not downloading.
-    """
+    """One CGD report row. download_href is the raw, unparsed
+    javascript:openDownload(...) href -- download.py extracts the URL."""
     title: str
     report_date: date
     download_href: str
@@ -85,10 +46,7 @@ def parse_thai_be_date(text: str) -> date:
 
 
 def find_latest_cgd_report(html: str) -> CgdReport | None:
-    """Return the most recent report on the CGD listing page, or None if no
-    report rows were found at all — a structural change worth failing loud
-    on, not silently reporting 'nothing new'.
-    """
+    """Most recent report on the CGD listing page, or None if no rows found."""
     soup = BeautifulSoup(html, "html.parser")
 
     reports = []
@@ -124,13 +82,8 @@ def find_latest_cgd_report(html: str) -> CgdReport | None:
 # ---------------------------------------------------------------- manifest
 
 def latest_cgd_date_from_manifest(manifest: dict) -> date | None:
-    """The most recent report_date across ALL manifest entries for CGD.
-
-    Manifest order is not trusted here for the same reason
-    find_latest_cgd_report doesn't trust page order: once Step 7 can append
-    a second CGD entry (e.g. next month's report), the newest one is not
-    guaranteed to be last (or first) in the file.
-    """
+    """Most recent report_date across all CGD manifest entries -- never
+    trusts manifest order (Step 7 can append entries out of date order)."""
     known_dates = [
         date.fromisoformat(entry["report_date"])
         for entry in manifest["files"]
@@ -180,13 +133,8 @@ FILE_LINK_EXTENSIONS = (".xlsx", ".xls", ".pdf", ".zip", ".doc", ".docx")
 
 
 def html_has_file_links(html: str) -> bool:
-    """True if the HTML contains any direct link to a document file.
-
-    Used to confirm, on every run, whether OCSC's page happens to expose
-    its report list statically, or is still hiding it behind the
-    JS-driven filter widget described in this module's docstring — rather
-    than assuming today's finding holds forever.
-    """
+    """True if the HTML has any direct link to a document file -- checked
+    fresh every run rather than assuming the JS-widget finding holds forever."""
     soup = BeautifulSoup(html, "html.parser")
     return any(
         any(ext in a["href"].lower() for ext in FILE_LINK_EXTENSIONS)
