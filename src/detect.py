@@ -148,10 +148,6 @@ def check_ocsc() -> str:
     except requests.exceptions.RequestException as e:
         return (
             f"OCSC: could not fetch listing page ({type(e).__name__}: {e}). Observed "
-            "intermittently while building this: this URL is sometimes served behind a "
-            "Cloudflare managed JS challenge ('Just a moment...', HTTP 403) — see "
-            "tests/fixtures/ocsc_cloudflare_challenge.html for a saved copy. OCSC publishes "
-            f"once a year, so check manually at {OCSC_URL}"
         )
 
     if not html_has_file_links(html):
