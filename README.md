@@ -1,4 +1,4 @@
-# ISAP Data Engineer Selection Project
+# ISAP Data Engineer Project
 
 Automated pipeline that pulls Thai government open data from two sources —
 **CGD** (budget disbursement) and **OCSC** (government workforce) — and loads
