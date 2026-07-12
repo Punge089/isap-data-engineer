@@ -1,26 +1,21 @@
-"""Step 7 downloader tests.
+"""Step 7 downloader tests. Fixture-based, no live network calls (the one
+real live download_cgd() run is documented in HANDOFF.md). Pure decision
+logic (process_download, hash_exists_in_manifest, extract_download_url,
+unwrap_response_bytes) is tested directly with no I/O.
 
-There was nothing new to download from the real CGD site when this step
-was built — detect.py's live run already reported "nothing new" (see
-HANDOFF.md). So the "new file" path is proven here with a controlled fake
-listing page plus tests/fixtures/fake_new_cgd_report.xlsx standing in for
-a real download's bytes, NOT a live network call — this is stated
-explicitly rather than implied. The "nothing new" path IS exercised for
-real against the live site (see HANDOFF.md's Step 7 entry for that actual
-command + output).
-
-Pure decision logic (process_download, hash_exists_in_manifest,
-extract_download_url) is tested directly with no I/O at all — matching
-this project's established pattern (clean.py, detect.py) of separating
-pure functions from their thin network/file wrappers.
-"""
+fake_new_cgd_report.xlsx is plain placeholder bytes (not a zip) --
+fake_new_cgd_report_zip_wrapped.xlsx mirrors the real ZIP-wrapped response
+structure found live on 2026-07-12 (see unwrap_response_bytes tests)."""
 
 import hashlib
+import io
 import json
+import zipfile
 from datetime import date
 from pathlib import Path
 
 import pytest
+from openpyxl import load_workbook
 
 import detect
 import download as download_module
@@ -77,6 +72,47 @@ def test_extract_download_url_from_real_fixture_href_exact_expected_url():
 def test_extract_download_url_returns_none_on_unrecognized_href():
     assert download_module.extract_download_url("https://example.com/plain-link.xlsx") is None
     assert download_module.extract_download_url("javascript:somethingElse();") is None
+
+
+# ---------------------------------------------------------------- zip-wrapped response
+# Found for real against the live CGD site on 2026-07-12: the download link
+# sometimes serves a ZIP containing a dated subfolder ('2026.07.03/...')
+# with the actual .xlsx inside, not a bare .xlsx. tests/fixtures/
+# fake_new_cgd_report_zip_wrapped.xlsx mirrors that exact structure with a
+# genuinely valid, openable inner workbook (unlike fake_new_cgd_report.xlsx,
+# which is plain placeholder bytes and would never have caught this bug).
+
+def test_unwrap_response_bytes_extracts_xlsx_from_zip_wrapper():
+    zip_bytes = (FIXTURES_DIR / "fake_new_cgd_report_zip_wrapped.xlsx").read_bytes()
+
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        expected_inner_bytes = zf.read("2026.07.03/2026.07.03.xlsx")
+
+    result = download_module.unwrap_response_bytes(zip_bytes)
+
+    assert result == expected_inner_bytes
+    # the unwrapped bytes must be a real, openable workbook, not just "some bytes"
+    wb = load_workbook(io.BytesIO(result))
+    assert wb.sheetnames == ["2.กระทรวง"]
+
+
+def test_unwrap_response_bytes_passes_plain_xlsx_through_unchanged():
+    plain_bytes = (FIXTURES_DIR / "fake_new_cgd_report.xlsx").read_bytes()
+    assert zipfile.is_zipfile(io.BytesIO(plain_bytes)) is False  # sanity: fixture is NOT a zip
+
+    result = download_module.unwrap_response_bytes(plain_bytes)
+
+    assert result == plain_bytes
+
+
+def test_unwrap_response_bytes_raises_on_zip_with_no_xlsx_entry():
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("readme.txt", "no xlsx in here")
+    zip_bytes_without_xlsx = buf.getvalue()
+
+    with pytest.raises(ValueError, match="no .xlsx entry"):
+        download_module.unwrap_response_bytes(zip_bytes_without_xlsx)
 
 
 def test_hash_exists_in_manifest_true_and_false():
@@ -224,6 +260,76 @@ def test_download_cgd_full_flow_with_fixture_bytes_not_live_network(tmp_path, mo
     assert new_entry["local_path"] == "raw/cgd/2026_08_10.xlsx"
     assert new_entry["sha256"] == hashlib.sha256(fixture_bytes).hexdigest()
     assert new_entry["downloaded_by"] == "auto"
+
+
+def test_download_cgd_full_flow_unwraps_zip_wrapped_response(tmp_path, monkeypatch):
+    """Same end-to-end shape as the plain-xlsx full-flow test above, but the
+    fake network response is ZIP-wrapped like the real live CGD response
+    found on 2026-07-12 -- proves download_cgd() unwraps it before hashing/
+    saving/appending, and that the saved file is a valid, openable xlsx
+    (not the outer zip bytes)."""
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "files": [
+                    {
+                        "source": "CGD",
+                        "source_name_th": "กรมบัญชีกลาง - ผลการเบิกจ่ายงบประมาณ",
+                        "source_url": "https://www.cgd.go.th/x",
+                        "local_path": "raw/cgd/2026_07_03.xlsx",
+                        "report_date": "2026-07-03",
+                        "sha256": "old-existing-hash",
+                        "downloaded_at": "2026-07-09T00:00:00+07:00",
+                        "downloaded_by": "manual",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(download_module, "MANIFEST_PATH", manifest_path)
+    monkeypatch.setattr(download_module, "REPO_ROOT", tmp_path)
+
+    fake_listing_html = """
+    <table><tr>
+      <td>img</td>
+      <td><h2 class="news-title"><a href="javascript:openDownload('NewsStat_C','999','/cs/Satellite?blobwhere=999');">ผลการเบิกจ่ายเงิน ณ วันที่ 10 สิงหาคม 2569</a></h2></td>
+      <td>10/08/2569</td>
+    </tr></table>
+    """
+    monkeypatch.setattr(detect, "fetch_html", lambda url: fake_listing_html)
+
+    zip_bytes = (FIXTURES_DIR / "fake_new_cgd_report_zip_wrapped.xlsx").read_bytes()
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        expected_inner_bytes = zf.read("2026.07.03/2026.07.03.xlsx")
+
+    class FakeResponse:
+        content = zip_bytes
+
+        def raise_for_status(self):
+            pass
+
+    monkeypatch.setattr(download_module.requests, "get", lambda *a, **k: FakeResponse())
+
+    result = download_module.download_cgd()
+
+    assert "downloaded new file" in result
+    assert "2026-08-10" in result
+
+    saved_path = tmp_path / "raw" / "cgd" / "2026_08_10.xlsx"
+    assert saved_path.exists()
+    # saved bytes are the UNWRAPPED inner xlsx, not the outer zip container
+    assert saved_path.read_bytes() == expected_inner_bytes
+    assert zipfile.is_zipfile(saved_path)  # still true: a real xlsx IS a zip internally
+    wb = load_workbook(saved_path)  # must not raise -- proves it's a valid, openable workbook
+    assert wb.sheetnames == ["2.กระทรวง"]
+
+    updated_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert len(updated_manifest["files"]) == 2  # appended, not replaced
+    new_entry = updated_manifest["files"][1]
+    assert new_entry["report_date"] == "2026-08-10"
+    assert new_entry["sha256"] == hashlib.sha256(expected_inner_bytes).hexdigest()  # hash of INNER bytes
 
 
 def test_download_cgd_reports_nothing_new_without_downloading_file(tmp_path, monkeypatch):

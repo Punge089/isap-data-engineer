@@ -5,8 +5,10 @@ to raw/. OCSC has no automated path -- download_ocsc() just refuses."""
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import re
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urljoin
@@ -34,6 +36,25 @@ def extract_download_url(href: str) -> str | None:
     if match is None:
         return None
     return urljoin(CGD_BASE_URL, match.group(3))
+
+
+def unwrap_response_bytes(file_bytes: bytes) -> bytes:
+    """CGD's download link sometimes serves the report inside a ZIP
+    container (a dated subfolder holding the real .xlsx) instead of a
+    bare .xlsx -- found for real against the live site on 2026-07-12.
+    Detects that case and returns the inner .xlsx bytes; a plain .xlsx
+    response is returned unchanged.
+    """
+    if not zipfile.is_zipfile(io.BytesIO(file_bytes)):
+        return file_bytes
+
+    with zipfile.ZipFile(io.BytesIO(file_bytes)) as zf:
+        xlsx_names = [n for n in zf.namelist() if n.lower().endswith(".xlsx")]
+        if not xlsx_names:
+            raise ValueError(
+                f"downloaded a ZIP but found no .xlsx entry inside -- contents: {zf.namelist()}"
+            )
+        return zf.read(xlsx_names[0])
 
 
 def hash_exists_in_manifest(sha256_hex: str, manifest: dict) -> bool:
@@ -119,7 +140,7 @@ def download_cgd() -> str:
     except requests.exceptions.RequestException as e:
         return f"CGD: found a new report but the download failed ({type(e).__name__}: {e})"
 
-    file_bytes = resp.content
+    file_bytes = unwrap_response_bytes(resp.content)
     new_entry = process_download(latest, file_bytes, manifest, template_entry)
     if new_entry is None:
         sha256_hex = hashlib.sha256(file_bytes).hexdigest()

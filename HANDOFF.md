@@ -38,8 +38,8 @@ first.
 | 4 — Cleaner/transformer | ✅ Done | `src/clean.py` + `tests/test_clean.py` (7 cases). Writes `staging/cgd_disbursement_clean.csv` (72 rows, unpivoted) and `staging/ocsc_workforce_clean.csv` (25 rows). Recomputes `disbursed_pct`/`share_pct` from raw numbers, never trusts Excel's percent (verified matching). **Divide-by-zero: returns NULL, not `inf`/crash** — not reachable in today's data, covered by a synthetic-row test. `is_leaf`: CGD from a fixed expense-type set, OCSC from `hierarchy_level == 2`. `parent_category` left as plain stripped text — resolving to a key is Step 5's job once `dim_personnel_category` exists. |
 | 5 — Loader | ✅ Done | `src/load.py` + `tests/test_load.py` (6 cases). Idempotent load via `ON CONFLICT DO NOTHING` — **proven by running the real loader twice and diffing row counts**: `dim_date` 2, `dim_ministry` 24, `dim_expense_type` 3, `dim_personnel_category` 25, `dim_source` 2, `fact_disbursement` 72, `fact_workforce_summary` 25, identical both runs. **Schema fix required:** `dim_source` had no natural-key UNIQUE constraint — added `file_hash UNIQUE`. **New rule, not in any config:** `fiscal_year_be` derived from `report_date` via standard Thai Oct–Sep FY cutover (`thai_fiscal_year_be()`), tested both directions — **only checked against one real report (mid-year), re-verify once an Oct–Dec report appears.** |
 | 6 — Latest-file detector | ✅ Done | `src/detect.py` + `tests/test_detect.py` (13 cases) + 3 real saved HTML fixtures. **Fixed the machine's actual TLS bug** (Norton re-signs HTTPS locally; added `pip-system-certs`) rather than working around it — confirmed by running unmodified `detect.py` live. **CGD: fully works, live-verified** — real 200, correct "nothing new" matching the manifest. **OCSC: two different real responses seen live, both real, neither supersedes the other** — see "Open risk" below; either way, manual fallback is correct (yearly cadence, low impact). **Bug fixed:** `load_known_cgd_date()` was taking the *first* matching manifest entry, not the latest — fixed to `max()`, proven order-independent. **New info for Step 7:** CGD links are `javascript:openDownload(...)`, not plain hrefs — the real URL is the 3rd argument. |
-| 7 — Downloader + validation (local logic; GH Actions cron itself pending) | ✅ Done | `src/download.py` + `src/validate_structure.py` + 15 tests, all green. `download_cgd()` extracts the real URL from the JS href, hashes bytes, appends (never overwrites) a manifest entry only if the hash is new. **Live-run result:** `CGD: nothing new to download (latest is 2026-07-03, already have it)` — confirmed no download attempted, `raw/` untouched. "New file → download → append" path proven via fixture (`fake_new_cgd_report.xlsx`, explicitly a placeholder) since there was nothing new to actually download. `download_ocsc()` refuses immediately, tested to make zero network calls. `validate_structure.py` checks 8 header anchors + total-row label before `extract.py` parses anything — tested against 5 mangled fixtures (all raise) plus the real file (passes). OCSC has no structure validation — deliberate, since there's no automated OCSC download path yet. **Two ordering bugs fixed:** `CgdReport` refactored to a `NamedTuple` to carry `download_href`; `load_manifest()`'s dict comprehension silently kept whichever entry iterated last — fixed to explicit `max()`. **GitHub Actions YAML is a separate, not-yet-built follow-up.** **Known, accepted:** file-write + manifest-append aren't atomic — an interrupted run just redownloads next time (dedup is by hash, not a corruption risk). |
-| 8 — Tests | ⬜ Not started | Much already exists (57 tests across the files above) — this step fills gaps (e.g. one true end-to-end smoke test) and organizes/documents the suite. |
+| 7 — Downloader + validation (local logic; GH Actions cron itself pending) | ✅ Done | `src/download.py` + `src/validate_structure.py` + 19 tests, all green. `download_cgd()` extracts the real URL from the JS href, unwraps a ZIP-wrapped response if present (see "Bug found and fixed" below), hashes bytes, appends (never overwrites) a manifest entry only if the hash is new. **Live-verified twice now** (see that section) — both the "nothing new" path and, since the ZIP-unwrap fix, the real download path against a genuinely fresh live response. `download_ocsc()` refuses immediately, tested to make zero network calls. `validate_structure.py` checks 8 header anchors + total-row label before `extract.py` parses anything — tested against 5 mangled fixtures (all raise) plus the real file (passes). OCSC has no structure validation — deliberate, since there's no automated OCSC download path yet. **Two ordering bugs fixed:** `CgdReport` refactored to a `NamedTuple` to carry `download_href`; `load_manifest()`'s dict comprehension silently kept whichever entry iterated last — fixed to explicit `max()`. **GitHub Actions YAML is a separate, not-yet-built follow-up.** **Known, accepted:** file-write + manifest-append aren't atomic — an interrupted run just redownloads next time (dedup is by hash, not a corruption risk). |
+| 8 — Tests | ⬜ Not started | Much already exists (66 tests across the files above) — this step fills gaps (e.g. one true end-to-end smoke test) and organizes/documents the suite. |
 | 9 — Suggestions to Senior + docs + interview prep | ⬜ Not started | |
 
 ## Locked decisions — do not re-litigate these
@@ -74,6 +74,63 @@ happened. Step 4 decided: store `NULL` on a zero denominator, not
 `inf`/`NaN`/a crash — required loosening both columns to nullable in
 `sql/schema.sql`. If you touch that DDL again, don't reintroduce
 `NOT NULL` without also changing `clean.py`.
+
+## Bug found and fixed: CGD's download link sometimes serves a ZIP, not a bare .xlsx — CLOSED 2026-07-12
+
+Found by deliberately testing the real, live `detect.py` → `download.py`
+path end-to-end (throwaway sibling copy of the repo, manifest date spoofed
+old to force a "new file" branch — never touched the real repo). CGD's
+actual download URL returned a **ZIP archive containing a dated
+subfolder** (`2026.07.03/2026.07.03.xlsx`), not the bare `.xlsx`
+`download_cgd()` assumed. It saved those raw response bytes straight to
+`raw/cgd/2026_07_03.xlsx` — a zip-of-an-xlsx, not a valid workbook —
+so `extract.py`'s `load_workbook()` failed immediately
+(`KeyError: '[Content_Types].xml'`).
+
+**Why every previous test missed this:** `fake_new_cgd_report.xlsx` (the
+existing "new file" fixture) is plain placeholder bytes, never
+zip-wrapped, so it could never have exercised this path. And the one
+prior live `download_cgd()` run (Step 7, 2026-07-09) hit the "nothing
+new" branch and never actually wrote a file — so the real file-write path
+had genuinely never run against a real network response until this test.
+
+**Fix:** new `unwrap_response_bytes()` in `download.py` — checks the
+response bytes with `zipfile.is_zipfile()`; if it's a ZIP, finds the
+`.xlsx` entry inside and returns its bytes (raises loudly if a ZIP has no
+`.xlsx` entry); a plain `.xlsx` response passes through unchanged. Called
+once, right after the HTTP response, before hashing/saving/appending —
+so every downstream step (sha256, `raw/cgd/*.xlsx`, the manifest entry)
+uses the real unwrapped bytes.
+
+**Verified two ways, not just one:**
+1. **New fixture** — `tests/fixtures/fake_new_cgd_report_zip_wrapped.xlsx`,
+   a real ZIP mirroring the exact structure found live (dated subfolder +
+   a genuinely valid, openable inner workbook, unlike the old placeholder
+   fixture). New tests assert the unwrap logic extracts the right bytes,
+   passes plain `.xlsx` through unchanged, raises on a ZIP with no
+   `.xlsx` inside, and that a full `download_cgd()` run against this
+   fixture saves a valid, `load_workbook()`-openable file. Old
+   fixture/tests kept as-is, not deleted.
+2. **Re-run against the real live site** (same throwaway-copy method,
+   after the fix): `detect.py` again correctly reported "new file found —
+   2026-07-03" against the spoofed-old manifest date. `download.py`
+   fetched the real live response, unwrapped it, and computed
+   sha256 `309ad096e8e1...` — an **exact byte-for-byte match** to the hash
+   already recorded as correct in the real repo's manifest (verified
+   independently in the prior investigation by manually unzipping and
+   hashing). Before the fix this hash would have been computed on the
+   raw zip container and would never have matched. It correctly hit the
+   "duplicate content, already have it" path instead of writing a second
+   copy — proof the fix reconstructs the identical real file from the
+   real live response, using the exact same `file_bytes` value that the
+   "new file" branch would have written to disk. `extract.py → clean.py →
+   load.py` re-run against the scratch copy afterward, same real row
+   counts as documented elsewhere in this file (`dim_ministry` 24,
+   `fact_disbursement` 72, etc.) — the pipeline was never actually broken,
+   only the raw download step.
+
+Test count: 57 → 61 (3 new `unwrap_response_bytes()` unit tests + 1 new
+full-flow test using the zip-wrapped fixture).
 
 ## Open risk: OCSC detection may be non-deterministic — NOT closed
 
@@ -179,6 +236,78 @@ hidden.
 **Proves:** a second, real, working trigger path independent of GitHub's
 runner IPs. **Does not:** fix the GitHub Actions 403, or make OCSC
 automatable — it's a mitigation, not a replacement for resolving either.
+
+## Task Scheduler now runs the full chained pipeline, not just detect.py — CLOSED 2026-07-12
+
+Previously Task Scheduler only ran `detect.py` (informational check only,
+never downloaded/loaded anything) — a real gap vs. GitHub Actions' YAML,
+which chains detect → download → extract → clean → load. Closed by adding
+`src/run_monthly_pipeline.py`, a `main()` mirroring the YAML's logic:
+print both `detect.check_cgd()`/`check_ocsc()` results (OCSC informational
+only, never gates); exit 1 loudly if the CGD check itself failed
+(`could not fetch` / `no report rows found`) rather than looking like a
+normal no-op month — same principle as the YAML's "Flag CGD check
+failures" step, applied locally; if `detect.check_cgd()` says nothing
+new, stop (exit 0); if it says a new file exists, call
+`download.download_cgd()`, and only run `extract.run_cgd()` →
+`clean.run_cgd()` → load (`load.ensure_schema` + `load.load_cgd` against
+a fresh connection) if that download actually saved a new file (not a
+dedup-skip). `scripts\run_monthly_cgd_check.bat` updated to call this
+script instead of `detect.py` directly, same log redirection.
+
+**One deliberate difference from the YAML, worth knowing about:** the
+YAML always runs `download.py` unconditionally and lets it do its own
+independent freshness check (that's *why* `download_cgd()` re-fetches the
+listing page itself rather than trusting an earlier step). This script
+instead gates the download call on `detect.check_cgd()`'s result, to
+avoid a second redundant live fetch when detect already knows there's
+nothing to do. Functionally equivalent in every case observed so far, but
+if `detect.check_cgd()` and `download.download_cgd()` ever disagreed
+(e.g. a report appears between the two calls), this script would miss it
+until the next run, where the YAML's design would not. Not fixed here
+since it wasn't asked for — flagging so it isn't mistaken for an
+oversight.
+
+**Tested two ways:**
+1. **Mocks first** — `tests/test_run_monthly_pipeline.py`, 5 cases (4
+   branches, one parametrized): nothing-new (only detect called, exits
+   0); new file + successful download (extract→clean→load run in that
+   exact order); new file + dedup-skip (pipeline does NOT run); fetch
+   failure, both message shapes (exits 1, nothing downstream touched).
+   `detect`, `download`, `extract`, `clean` are monkeypatched at the
+   module level; the load step is isolated behind a small
+   `run_load_cgd()` helper so tests don't need a real duckdb connection.
+2. **One real live trigger** — `schtasks /run /tn "ISAP Monthly CGD
+   Check"`, polled until done.
+
+**Bug found during that live trigger, unrelated to the new script itself,
+and fixed:** the task's registered action still pointed to
+`C:\Users\MSII\Desktop\...` (the short path from the original Step 7
+Task Scheduler setup) — dead, because OneDrive's Known Folder Move has
+since relocated Desktop to `C:\Users\MSII\OneDrive\Desktop\...`. First
+live trigger after the script swap failed with `LastTaskResult=1` and
+`logs/detect_log.txt`'s mtime hadn't moved at all — the task never even
+launched the batch file. This is exactly the "known limitation" already
+flagged in the original Task Scheduler entry above (short path is
+tied to one machine/folder; moving the repo needs re-registration) — it
+had just never actually triggered until now. Fixed by generating a fresh
+8.3 short path for the current real location and applying it via
+`Set-ScheduledTask -Action (New-ScheduledTaskAction ...)` (PowerShell's
+`ScheduledTasks` module) rather than `schtasks /change /tr`, which
+prompted for an interactive password re-entry and had to be aborted.
+Re-triggered after the fix: `LastTaskResult=0`, `logs/detect_log.txt`
+grew from 4 to 7 lines with the expected content (CGD "nothing new",
+OCSC's informational 403, and the pipeline's own "nothing new this month
+-- pipeline not run" line) — confirmed by real line count and mtime, not
+assumed.
+
+**What this proves / doesn't:** proves Task Scheduler now runs the same
+full chain as GitHub Actions when triggered, and that the trigger
+mechanism itself works again after the stale-path fix. Does not exercise
+the download→extract→clean→load branch live, since there was genuinely
+nothing new to download at trigger time (same real site state documented
+elsewhere in this file) — that branch is covered by mocks only until a
+real new CGD file appears (see "Open item" below).
 
 ## Open item: extract→clean→load against a genuinely new CGD file is still fixture-tested only
 
