@@ -22,11 +22,77 @@ warehouse/    warehouse.duckdb lives here (generated, not committed).
 
 ## Setup
 
+### 1. Clone and install
+
 ```bash
+git clone <this-repo-url>
+cd isap-data-engineer
 python3 -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
+
+### 2. Create the warehouse schema
+
+```bash
+python src/init_db.py
+```
+
+Creates `warehouse/warehouse.duckdb` and applies `sql/schema.sql` (dims +
+facts). Safe to re-run any time — the DDL is all `CREATE ... IF NOT EXISTS`,
+so it never drops or duplicates anything.
+
+### 3. Populate the warehouse from the committed raw files
+
+```bash
+python src/extract.py
+python src/clean.py
+python src/load.py
+```
+
+- `extract.py` reads the raw source Excel files committed under `raw/`
+  (per-source config in `config/`) and writes flat CSVs to `staging/`.
+- `clean.py` reshapes those CSVs into warehouse-shaped rows (unpivoting,
+  recomputing percentages, etc.).
+- `load.py` idempotently loads the cleaned rows into
+  `warehouse/warehouse.duckdb` (`ON CONFLICT DO NOTHING` on the natural
+  key, so running it twice gives identical row counts).
+
+`warehouse/warehouse.duckdb` is **gitignored on purpose** — it's a build
+artifact, not source. This step is what builds it locally; you won't see
+the file until you run it.
+
+### 4. View the warehouse
+
+```bash
+duckdb warehouse/warehouse.duckdb -ui
+```
+
+Opens DuckDB's browser-based UI against the file you just built. Note this
+`duckdb` is the **standalone DuckDB CLI** (a separate binary from
+duckdb.org), not the `duckdb` Python package installed via
+`requirements.txt` — install it separately if the command isn't found.
+
+### 5. Run the test suite
+
+```bash
+python -m pytest tests/ -v
+```
+
+Use the `python -m pytest` form rather than a bare `pytest` — bare
+`pytest` resolves via the shebang/shim baked in at venv-creation time, so
+it can silently break if the venv folder is moved or renamed. `python -m
+pytest` always runs against whichever `python` is currently active.
+
+### 6. Automation (optional, for the full monthly pipeline)
+
+Beyond the manual steps above, `src/detect.py` checks each source for a
+new report, `src/download.py` fetches and lineage-tracks new CGD files,
+and `src/run_monthly_pipeline.py` chains detect → download → extract →
+clean → load into one script. This runs monthly via a GitHub Actions
+workflow ([.github/workflows/monthly_check.yml](.github/workflows/monthly_check.yml))
+and, as a second path, a local Windows Task Scheduler job. See
+[HANDOFF.md](./HANDOFF.md) for the full detail on both.
 
 ## Data sources
 
