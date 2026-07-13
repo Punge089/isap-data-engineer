@@ -20,6 +20,16 @@
       "sha256": "fcb9ee5644ee235031a0e363e42dc8a207b72248e8d8ac770e6b4de9afad7f9b",
       "downloaded_at": "2026-07-09T00:00:00+07:00",
       "downloaded_by": "manual"
+    },
+    {
+      "source": "CGD",
+      "source_name_th": "กรมบัญชีกลาง - ผลการเบิกจ่ายงบประมาณ",
+      "source_url": "https://www.cgd.go.th/cs/internet/internet/%E0%B8%82%E0%B9%88%E0%B8%B2%E0%B8%A7%E0%B8%AA%E0%B8%96%E0%B8%B4%E0%B8%95%E0%B8%B4.html",
+      "local_path": "raw/cgd/2026_07_10.xlsx",
+      "report_date": "2026-07-10",
+      "sha256": "a3d30bcd4f7f253cfc4b2ffd7c13973edd9b2ad07a67ca36af4f0cf653749fcb",
+      "downloaded_at": "2026-07-13T13:38:06.941212+07:00",
+      "downloaded_by": "auto"
     }
   ]
 }
