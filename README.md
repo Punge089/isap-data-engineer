@@ -86,13 +86,52 @@ pytest` always runs against whichever `python` is currently active.
 
 ### 6. Automation (optional, for the full monthly pipeline)
 
-Beyond the manual steps above, `src/detect.py` checks each source for a
-new report, `src/download.py` fetches and lineage-tracks new CGD files,
-and `src/run_monthly_pipeline.py` chains detect → download → extract →
-clean → load into one script. This runs monthly via a GitHub Actions
-workflow ([.github/workflows/monthly_check.yml](.github/workflows/monthly_check.yml))
-and, as a second path, a local Windows Task Scheduler job. See
-[HANDOFF.md](./HANDOFF.md) for the full detail on both.
+Beyond the manual steps above, three additional scripts handle checking
+for and ingesting new source files automatically:
+
+**`src/detect.py`** — checks each source for a newer report than what's
+already recorded in `raw/manifest.json`.
+- For CGD: fetches the report-listing page with `requests`, parses it
+  with `BeautifulSoup` (the page is server-rendered, so report dates are
+  present directly in the raw HTML), and compares the latest date found
+  against the manifest — not just the first row, the actual maximum.
+- For OCSC: attempts the same approach, but the site's report list is
+  populated client-side via JavaScript after page load, so a plain HTTP
+  GET never sees it. This is a confirmed limitation, not an assumption —
+  static requests return either a Cloudflare challenge or a 200 response
+  with an empty listing, across three different endpoints tested
+  (listing page, direct post URL, WordPress REST API). Automated
+  detection isn't possible for OCSC without a headless browser; a manual
+  check is used instead, acceptable since this source only updates
+  yearly.
+
+**`src/download.py`** — given a CGD report `detect.py` flagged as new,
+extracts the real file URL (embedded in a `javascript:openDownload(...)`
+call rather than a plain `<a href>`, pulled out with a regex),
+downloads the bytes, and hashes them with SHA-256 before writing to
+`raw/` and appending a `manifest.json` entry — this hash is what makes
+re-running the pipeline against an already-downloaded file a no-op
+instead of a duplicate. One non-obvious detail found via live testing:
+CGD's download endpoint doesn't serve a bare `.xlsx` — it serves a ZIP
+archive with the workbook nested inside a dated subfolder, so
+`download.py` checks for a ZIP container and unwraps it before
+hashing/saving.
+
+**`src/run_monthly_pipeline.py`** — chains `detect.py` → `download.py` →
+`extract.py` → `clean.py` → `load.py` into one script, gating each step
+on the previous one's real result (only downloads if a genuinely new
+file is found; only re-runs extract/clean/load if the download actually
+wrote a new file). This is what's scheduled monthly, via two independent
+paths:
+- GitHub Actions ([.github/workflows/monthly_check.yml](.github/workflows/monthly_check.yml))
+  — cloud-hosted, but CGD's site currently blocks requests from GitHub's
+  runner IP range (confirmed via repeated live runs, not theoretical).
+- A local Windows Task Scheduler job — runs the same script from a
+  regular residential IP, which isn't blocked. This is the path that's
+  been verified working end-to-end against the live site.
+
+See [HANDOFF.md](./HANDOFF.md) for the full incident log — IP-block
+details, the OCSC investigation, and the ZIP-unwrap bug and fix.
 
 ## Data sources
 
